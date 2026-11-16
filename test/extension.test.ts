@@ -1,6 +1,6 @@
 // Drives the extension through a fake pi: no TUI, but every hook and command runs for real.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { test } from "node:test";
@@ -97,6 +97,13 @@ test("tool policy: spec folder writable, everything else refused", async () => {
   // The template is the user's: /spec agree relies on it.
   assert.equal((await call("write", { path: "specs/spec_template.md", content: "" }))?.block, true);
   assert.equal((await call("edit", { path: "specs/SPEC_TEMPLATE.md" }))?.block, true);
+  // Symlinks under specs/ (a cloned repo can ship them) would carry the write outside.
+  mkdirSync(join(h.cwd, "specs"), { recursive: true });
+  mkdirSync(join(h.cwd, "src"));
+  symlinkSync("../src", join(h.cwd, "specs/notes"));
+  symlinkSync("../src/a.md", join(h.cwd, "specs/0002_spec_y.md"));
+  for (const path of ["specs/notes/a.md", "specs/notes/deep/a.md", "specs/0002_spec_y.md"])
+    assert.equal((await call("write", { path, content: "" }))?.block, true, path);
   assert.equal(await call("bash", { command: "grep -rn foo ." }), undefined);
   assert.equal((await call("bash", { command: "echo x > specs/a.md" }))?.block, true);
   assert.equal((await call("some_mcp_tool", {}))?.block, true);

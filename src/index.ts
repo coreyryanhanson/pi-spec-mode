@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -371,6 +371,12 @@ export default function specMode(pi: ExtensionAPI) {
       if (!isInside(settings.specsDir, ctx.cwd, p))
         return { block: true, reason: `Spec mode: files can be created or edited only inside ${settings.specsDir}/.` };
       const abs = resolve(ctx.cwd, p);
+      // The path check is textual: a symlink under specs/ (or specs/ itself), e.g. one a cloned repo ships, would carry the write elsewhere.
+      for (let d = abs; ; d = dirname(d)) {
+        if (lstatSync(d, { throwIfNoEntry: false })?.isSymbolicLink())
+          return { block: true, reason: `Spec mode: ${rel(ctx, d)} is a symbolic link; spec mode does not write through links.` };
+        if (d === specsAbs(ctx) || d === dirname(d)) break;
+      }
       // Only Markdown: a `.git/config` or `.git/HEAD` under specs/ would make `cd specs/r && git status` run the agent's commands.
       if (!/\.md$/i.test(abs))
         return { block: true, reason: `Spec mode: only Markdown files (.md) can be written in ${settings.specsDir}/.` };
