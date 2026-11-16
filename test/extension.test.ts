@@ -78,6 +78,17 @@ test("/spec <request> enters spec mode, contract and status follow", async () =>
   assert.match(contract, /## 1\. Problem/); // bundled template inlined
 });
 
+test("spec contract lists existing specs by title and goal, and asks for a conflict check", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_dark_mode.md"), FILLED.replace("| Status | Draft |", "| Status | Agreed |"));
+  await h.commands.spec.handler("start", h.ctx);
+  const contract = await h.prompt();
+  assert.match(contract, /- specs\/0001_spec_dark_mode\.md — Agreed — Dark mode: The user can switch the app to a dark theme\./);
+  assert.match(contract, /check for conflicts/);
+});
+
 test("tool policy: spec folder writable, everything else refused", async () => {
   const h = harness();
   await h.fire("session_start");

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber,
-  refuseSpec, resolveSpec, restoreSpec, setField, specTable, sweepRefused, verifyQueue,
+  refuseSpec, resolveSpec, restoreSpec, setField, specSummary, specTable, sweepRefused, verifyQueue,
 } from "../src/core.ts";
 
 const template = readFileSync(new URL("../templates/spec_template.md", import.meta.url), "utf8");
@@ -117,4 +117,11 @@ test("specTable lists every spec with status and verification age, Refused/ incl
   assert.match(rows[0], /^0001 +Refused +verified 2026-11-06 \(10 d ago\) +login$/);
   assert.match(rows[1], /^0002 +Implemented +never verified +offline$/);
   assert.deepEqual(specTable(specsDir({}), "2026-11-16"), []);
+});
+
+test("specSummary: H1 title and the first line of Goal, capped", () => {
+  assert.equal(specSummary("# 0003 Spec: Offline mode\n\n## 2. Goal\n\nThe app works without network.\nmore\n"), "Offline mode: The app works without network.");
+  assert.equal(specSummary("# 0003 Spec: Offline mode\n\n## Problem\n\nx\n"), "Offline mode");
+  assert.equal(specSummary("## 2. Goal\n\n## 3. Non-goals\n"), "");
+  assert.equal(specSummary(`# T\n## Goal\n${"x".repeat(300)}`).length, 200);
 });

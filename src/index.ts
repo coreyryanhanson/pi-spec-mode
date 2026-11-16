@@ -5,7 +5,7 @@ import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil
 import { Type } from "typebox";
 import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, listSpecs, missingSections,
-  nextSpecNumber, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, specTable, sweepRefused, today, verifyQueue,
+  nextSpecNumber, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, specSummary, specTable, sweepRefused, today, verifyQueue,
 } from "./core.ts";
 import { implementRequest, NORMAL_CONTRACT, specContract, verifyContract } from "./prompts.ts";
 
@@ -353,7 +353,10 @@ export default function specMode(pi: ExtensionAPI) {
       return;
     }
     sweep(ctx);
-    const specs = listSpecs(specsAbs(ctx)).map((p) => `${rel(ctx, p)} — ${getField(readFileSync(p, "utf8"), "Status") ?? "?"}`);
+    const specs = listSpecs(specsAbs(ctx)).map((p) => {
+      const md = readFileSync(p, "utf8");
+      return `${rel(ctx, p)} — ${getField(md, "Status") ?? "?"} — ${specSummary(md)}`;
+    });
     sections[SECTION] = specContract({
       specsDir: settings.specsDir,
       today: today(),

@@ -5,6 +5,7 @@
 - `/spec list`: every spec, refused ones included, with its `Status`, `Last verified` and how many days ago. Also in the `/spec` menu.
 - `/spec agree` refuses a spec with an empty section: write "None" when nothing applies to bypass this.
 - `/spec verify <spec>` checks one spec, even if already verified today. `/spec verify` followed by anything that is not a spec name is still sent as a request and not a command. Works with for example 3, 0003, offline_mode, or the complete file name.
+- Spec mode checks a new spec for conflicts with existing ones before `spec_complete`. The agent sees only each spec's title and Goal sentence, and reads in full only the `Agreed`/`Implemented` specs on the same subject: cheap on context, but not infallible. A conflicting rule in a spec whose title and goal look unrelated is missed; `/spec verify` remains the safety net.
 
 ## 0.0.1-beta4
 

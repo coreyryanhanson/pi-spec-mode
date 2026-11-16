@@ -9,7 +9,7 @@ interface SpecContext {
   next: string;
   language: string;
   template: string;
-  specs: string[]; // "path — Status"
+  specs: string[]; // "path — Status — Title: goal"
   current?: string;
 }
 
@@ -31,6 +31,7 @@ Writing the spec:
 - Read the code only to understand current behaviour.
 - Ask only real decisions, never what the project already tells you, with spec_question. No "TBD", no open-questions section.
 - Never set Status to Agreed yourself: only the user agrees a spec.
+- Before spec_complete, check for conflicts: from the existing specs list below (title and goal only), read in full the Agreed and Implemented specs that touch the same feature or behaviour, and ask with spec_question about any rule of yours that contradicts one of theirs. Do not read the others.
 - When the spec is complete and every question is answered, call spec_complete with its path, then stop.
 ${c.current ? `\nCurrent spec: \`${c.current}\` — re-read it before every change; the user may edit it by hand.\n` : ""}
 Specs in \`${c.specsDir}/Refused/\` were refused by the user: ignore them, never use or extend them.

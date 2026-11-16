@@ -59,6 +59,13 @@ export function missingSections(spec: string, template: string): string[] {
   return heads(template).filter((h) => !have.has(h));
 }
 
+/** "Title: goal" from a spec's H1 and the first line of its Goal section (if the template has one), capped at 200 chars. */
+export function specSummary(md: string): string {
+  const title = /^# (?:\d{4} Spec: )?(.+)$/m.exec(md)?.[1].trim() ?? "";
+  const goal = /^## (?:\d+\.\s*)?Goal\b.*\n+([^#\n][^\n]*)/im.exec(md)?.[1].trim() ?? "";
+  return [title, goal].filter(Boolean).join(": ").slice(0, 200);
+}
+
 /** `## ` sections with nothing under them: a section that does not apply says so ("None"). */
 export function emptySections(spec: string): string[] {
   return spec.split(/^(?=## )/m)

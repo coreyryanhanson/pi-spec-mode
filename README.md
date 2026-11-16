@@ -36,7 +36,7 @@ pi -e ./                           # try a local checkout
 | `/spec exit` | Leave spec mode |
 | `/spec settings` | Show the effective settings |
 
-While in spec mode the footer shows `spec-mode` (then `spec-mode 0003 · Draft`); nothing when off. The agent can read the whole project, run only read-only shell commands, and write only Markdown files inside the specs folder. It asks decisions through `spec_question` and calls `spec_complete` when the spec is ready, which opens an **Agree / Keep discussing / Leave** menu.
+While in spec mode the footer shows `spec-mode` (then `spec-mode 0003 · Draft`); nothing when off. The agent can read the whole project, run only read-only shell commands, and write only Markdown files inside the specs folder. Before calling `spec_complete`, it checks the new spec against existing ones: it sees each spec's title and Goal sentence only, reads in full the `Agreed` and `Implemented` specs on the same subject, and asks about any contradicting rule. This keeps the context small but is not exhaustive: a conflicting rule in a spec whose title and goal look unrelated is missed (`/spec verify` remains the safety net). It asks decisions through `spec_question` and calls `spec_complete` when the spec is ready, which opens an **Agree / Keep discussing / Leave** menu.
 
 Specs live in `specs/NNNN_spec_<feature>.md`; implemented ones move to `specs/Implemented/`, refused ones to `specs/Refused/` (also when you set `Status` to `Refused` by hand).
 
@@ -101,3 +101,8 @@ npm install
 npm test          # node --test, no build step: pi loads the TypeScript directly
 npm run typecheck
 ```
+
+## Known limitations
+
+- **Conflict check depends on section names.** The existing specs are summarised by their H1 title and the first line of a section named `Goal` (with or without a number, e.g. `## 2. Goal`). If your template renames it (`## Objectif`, `## Purpose`…), each spec is listed by its title only, and conflicts are detected less reliably. Keep a heading named `Goal` in your template to get the full summary.
+- **Conflict check is a model instruction, not code.** The agent is asked to read the related specs and report contradictions; nothing enforces that it does. `/spec verify` remains the safety net.
