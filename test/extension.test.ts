@@ -82,10 +82,13 @@ test("tool policy: spec folder writable, everything else refused", async () => {
   assert.equal(await call("write", { path: "specs/0001_spec_x.md", content: "" }), undefined);
   assert.equal((await call("write", { path: "src/x.ts", content: "" }))?.block, true);
   assert.equal((await call("edit", { path: "specs/../package.json" }))?.block, true);
-  assert.equal((await call("write", { path: "specs/-o", content: "" }))?.block, true);
+  assert.equal((await call("write", { path: "specs/-o.md", content: "" }))?.block, true);
+  // Only .md: a git repo under specs/ needs `.git/HEAD` and `.git/config`, and git runs commands from its config.
+  for (const path of ["specs/r/.git/config", "specs/r/.git/HEAD", "specs/notes.txt"])
+    assert.equal((await call("write", { path, content: "" }))?.block, true, path);
   // Paths pi would rewrite after the check: refused, or pinned to the absolute path that was checked.
   assert.equal((await call("write", { path: "@specs/0001_spec_x.md", content: "" }))?.block, true);
-  for (const path of ["file:///../specs/%2e%2e/../etc/x", "~/../specs/a.md", "@/../specs/a.md"]) {
+  for (const path of ["file:///../specs/%2e%2e/../etc/x.md", "~/../specs/a.md", "@/../specs/a.md"]) {
     const input = { path, content: "" };
     assert.equal(await call("write", input), undefined);
     assert.equal(input.path, resolve(h.cwd, path));

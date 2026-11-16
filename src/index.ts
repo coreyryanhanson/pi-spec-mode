@@ -371,6 +371,9 @@ export default function specMode(pi: ExtensionAPI) {
       if (!isInside(settings.specsDir, ctx.cwd, p))
         return { block: true, reason: `Spec mode: files can be created or edited only inside ${settings.specsDir}/.` };
       const abs = resolve(ctx.cwd, p);
+      // Only Markdown: a `.git/config` or `.git/HEAD` under specs/ would make `cd specs/r && git status` run the agent's commands.
+      if (!/\.md$/i.test(abs))
+        return { block: true, reason: `Spec mode: only Markdown files (.md) can be written in ${settings.specsDir}/.` };
       // A file named `-o` would turn a shell glob like `sort *` into a flag the bash allowlist never saw.
       // Only the part under the specs folder is checked: the project's own path may contain a `-folder`.
       if (relative(specsAbs(ctx), abs).split(/[\\/]/).some((s) => s.startsWith("-")))

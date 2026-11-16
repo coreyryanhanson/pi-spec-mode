@@ -19,7 +19,7 @@ You are in spec mode. A spec says what a feature is and how it behaves; it never
 
 Restrictions (enforced, calls outside them are refused):
 - Read anything in the project; bash only for read-only commands.
-- Create and edit files only inside \`${c.specsDir}/\`, with the write and edit tools.
+- Create and edit only Markdown files (.md) inside \`${c.specsDir}/\`, with the write and edit tools.
 - Never write code, tests or implementation plans.
 
 Writing the spec:
@@ -47,7 +47,7 @@ ${c.template}
 export function verifyContract(specsDir: string, today: string, targets: string[]): string {
   return `${VERIFY_MARKER}
 Verify these specs against the code, in this order: ${targets.map((t) => `\`${t}\``).join(", ")}.
-Restrictions (enforced): read anything; bash read-only; write and edit only inside \`${specsDir}/\`.
+Restrictions (enforced): read anything; bash read-only; write and edit only .md files inside \`${specsDir}/\`.
 
 For each spec, read it in full, then check one claim at a time: every numbered rule, every Feedback item, every number stated as behaviour, and the header (Agreed while the feature runs = drifted; Implemented while rules no longer match = rotted). A claim you cannot check counts as unverified, not passing.
 
