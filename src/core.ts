@@ -126,9 +126,12 @@ export function isReadOnlyCommand(cmd: string): boolean {
   // Expansions can produce a flag the check never saw: `$(…)`, `${X:--o}`, `$'\x2do'`, `$_`, `$IFS` splitting, `{-o,out}`.
   // Single quotes stop `$` only if each `'` is a real quote: a `'` inside "…", after `\`, in a comment or a heredoc is text.
   const unquoted = /["\\#]|<</.test(cmd) ? cmd : cmd.replace(/'[^']*'/g, "''");
-  if (/\$[A-Za-z_{('"]/.test(unquoted) || /\{[^}]*(,|\.\.)[^}]*\}/.test(cmd)) return false;
+  // `$@`, `$*`, `$1`… can expand to a glob like `*` (see below).
+  if (/\$[A-Za-z_{('"@*!0-9]/.test(unquoted) || /\{[^}]*(,|\.\.)[^}]*\}/.test(cmd)) return false;
   return cmd.split(/\|\||&&|[|;\n&]/).every((part) => {
     const w = part.trim().split(/\s+/);
+    // A leading glob can expand to a file named like a flag (`sort *` with a `-o` file is `sort -o …`): `./*` cannot.
+    if (w.some((a) => /^[*?[]/.test(a.replace(/''|""/g, "")))) return false;
     // rtk's pi extension rewrites commands to `rtk <cmd>` before spec mode sees them
     const rtk = w[0] === "rtk";
     if (rtk) w.splice(0, w[1] === "proxy" ? 2 : 1);

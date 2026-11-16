@@ -6,6 +6,7 @@
 - The bash filter refuses `2>&1x`: a `2>&1` redirect must end the word.
 - Spec names match `.md` in any case: on macOS and Windows, writing `0001_spec_x.MD` no longer skips the "only `/spec agree` agrees" check.
 - Spec mode writes only Markdown (`.md`) files under the specs folder, so the agent cannot plant a git config that `git status` would run.
+- The bash filter refuses a word starting with a glob (`sort *`): a file named `-o` in the project would turn it into a flag. Write `./*` instead. `$@`, `$*` and `$1` are refused too.
 
 ## 0.0.1-beta3
 
