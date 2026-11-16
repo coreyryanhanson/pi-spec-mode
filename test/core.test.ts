@@ -81,7 +81,7 @@ test("bash: readers pass, anything that writes is refused", () => {
     "uniq a.md src/index.ts", "awk -f specs/x.awk", "sort --compress-program=sh f", "sed -n 1p -i f", "file -C -m x", "less -o log f",
     "sort \"-o\" out a", "sort \\-o out a", "sort ${X:--o} out", "sort $'\\x2do' out", "echo -o; sort $_ out", "sort x$IFS-o out", "sort {-o,out}",
     "git log --ext-diff", "git -c core.pager=sh log", "rg -z x", "read x", "date -s 12:00",
-    "echo \"'\" $(touch pwned) \"'\"", "echo \\' $(touch pwned) \\'", "ls # '\necho $(touch pwned) # '"])
+    "echo \"'\" $(touch pwned) \"'\"", "echo \\' $(touch pwned) \\'", "ls # '\necho $(touch pwned) # '", "echo hi2>&1x", "echo payload2>&1/../escaped.txt"])
     assert.ok(!isReadOnlyCommand(c), c);
 });
 
