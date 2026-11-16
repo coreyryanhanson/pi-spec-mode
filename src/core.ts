@@ -136,7 +136,9 @@ export function isReadOnlyCommand(cmd: string): boolean {
     const rtk = w[0] === "rtk";
     if (rtk) w.splice(0, w[1] === "proxy" ? 2 : 1);
     if (w[0] === "") return true;
-    let flags = FLAGS[rtk && w[0] === "read" ? "rtk read" : w[0]];
+    const key = rtk && w[0] === "read" ? "rtk read" : w[0];
+    // Own keys only: `constructor` or `toString` are on every object.
+    let flags = Object.hasOwn(FLAGS, key) ? FLAGS[key] : undefined;
     let args = w.slice(1);
     if (w[0] === "git") {
       if (!GIT_READ.has(w[1]) || (w[1] === "branch" && w.length > 2)) return false;
