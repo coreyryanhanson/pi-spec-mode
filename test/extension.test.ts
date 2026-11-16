@@ -277,13 +277,13 @@ test("commands refuse what the current state does not allow", async () => {
   assert.match(h.notes.at(-1)!, /not on/);
   await h.commands.spec.handler("agree", h.ctx);
   assert.match(h.notes.at(-1)!, /not on/);
-  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["start", "verify", "implement", "refuse", "restore", "template", "settings"]);
+  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["start", "list", "verify", "implement", "refuse", "restore", "template", "settings"]);
   await h.commands.spec.handler("start", h.ctx);
   await h.commands.spec.handler("start", h.ctx);
   assert.match(h.notes.at(-1)!, /already on/);
   await h.commands.spec.handler("agree", h.ctx);
   assert.match(h.notes.at(-1)!, /No spec written yet/);
-  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["refuse", "exit", "template", "settings"]);
+  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["list", "refuse", "exit", "template", "settings"]);
 });
 
 test("/spec settings says which files exist and reloads a project file created later", async () => {
@@ -393,4 +393,15 @@ test("a project whose own path has a folder starting with - can still write spec
   assert.equal(await call("../../-perso/app/specs/0001_spec_x.md"), undefined);
   assert.equal((await call(join(cwd, "specs/-o")))?.block, true);
   assert.equal((await call("specs/-dir/0001_spec_x.md"))?.block, true);
+});
+
+test("/spec list shows the specs, or says there are none", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  await h.commands.spec.handler("list", h.ctx);
+  assert.match(h.notes.at(-1)!, /No spec in specs\//);
+  mkdirSync(join(h.cwd, "specs"), { recursive: true });
+  writeFileSync(join(h.cwd, "specs/0001_spec_login.md"), "| Status | Draft |\n");
+  await h.commands.spec.handler("list", h.ctx);
+  assert.match(h.notes.at(-1)!, /0001 +Draft +never verified +login/);
 });

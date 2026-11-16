@@ -5,7 +5,7 @@ import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil
 import { Type } from "typebox";
 import {
   getField, isInside, isReadOnlyCommand, leftovers, listSpecs, missingSections,
-  nextSpecNumber, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, sweepRefused, today, verifyQueue,
+  nextSpecNumber, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, specTable, sweepRefused, today, verifyQueue,
 } from "./core.ts";
 import { implementRequest, NORMAL_CONTRACT, specContract, verifyContract } from "./prompts.ts";
 
@@ -27,10 +27,10 @@ const SECTION = "spec-mode";
 const MUTEX = "workflow:mutex:v1"; // shared with @narumitw/pi-plan-mode: only one agent workflow at a time
 const READ_TOOLS = new Set(["read", "grep", "find", "ls", "spec_question", "spec_complete"]);
 const BUNDLED_TEMPLATE = fileURLToPath(new URL("../templates/spec_template.md", import.meta.url));
-const USAGE = "/spec start | <request> | agree | refuse [spec] | restore <spec> | verify | implement <spec> | template | exit | settings";
+const USAGE = "/spec start | <request> | list | agree | refuse [spec] | restore <spec> | verify | implement <spec> | template | exit | settings";
 /** `/spec` menu label → the subcommand it runs, and whether it first asks which spec. */
 const MENU: Record<string, [string, boolean]> = {
-  "Start spec mode": ["start", false], "Verify specs": ["verify", false], "Implement a spec": ["implement", true],
+  "Start spec mode": ["start", false], "List specs": ["list", false], "Verify specs": ["verify", false], "Implement a spec": ["implement", true],
   "Refuse a spec": ["refuse", true], "Restore a refused spec": ["restore", true], "Create the project template": ["template", false],
   "Settings": ["settings", false], "Agree the spec": ["agree", false], "Refuse the spec": ["refuse", false], "Leave spec mode": ["exit", false],
 };
@@ -269,9 +269,9 @@ export default function specMode(pi: ExtensionAPI) {
     getArgumentCompletions: (prefix) => {
       // Offer only what the current state accepts.
       const valid =
-        state.mode === "off" ? ["start", "verify", "implement", "refuse", "restore", "template", "settings"]
-        : state.mode === "spec" ? [...(state.spec ? ["agree"] : []), "refuse", "exit", "template", "settings"]
-        : ["settings"];
+        state.mode === "off" ? ["start", "list", "verify", "implement", "refuse", "restore", "template", "settings"]
+        : state.mode === "spec" ? [...(state.spec ? ["agree"] : []), "list", "refuse", "exit", "template", "settings"]
+        : ["list", "settings"];
       const items = valid.filter((s) => s.startsWith(prefix));
       return items.length ? items.map((value) => ({ value, label: value })) : null;
     },
@@ -281,15 +281,15 @@ export default function specMode(pi: ExtensionAPI) {
       const idle = ctx.isIdle();
       const busy = () => notify(ctx, "The agent is running: wait or interrupt, then retry.", "warning");
       // `/spec verify that login works offline` is a request: commands without an argument only match alone.
-      const isRequest = rest !== "" && ["start", "exit", "off", "agree", "verify", "template", "settings"].includes(sub);
+      const isRequest = rest !== "" && ["start", "list", "exit", "off", "agree", "verify", "template", "settings"].includes(sub);
 
       switch (isRequest ? undefined : sub) {
         case "": {
           if (!ctx.hasUI) return notify(ctx, `Usage: ${USAGE}`);
           const options =
             state.mode === "off"
-              ? ["Start spec mode", "Verify specs", "Implement a spec", "Refuse a spec", "Restore a refused spec", "Create the project template", "Settings"]
-              : [...(state.spec ? ["Agree the spec", "Refuse the spec"] : []), "Leave spec mode", "Settings"];
+              ? ["Start spec mode", "List specs", "Verify specs", "Implement a spec", "Refuse a spec", "Restore a refused spec", "Create the project template", "Settings"]
+              : [...(state.spec ? ["Agree the spec", "Refuse the spec"] : []), "List specs", "Leave spec mode", "Settings"];
           const pick = await ctx.ui.select("Spec mode", options);
           const [menuSub, asksSpec] = (pick && MENU[pick]) || [];
           // The menu runs the same command as typing it.
@@ -318,6 +318,10 @@ export default function specMode(pi: ExtensionAPI) {
           return idle ? refuse(ctx, rest) : busy();
         case "restore":
           return idle ? restoreRefused(ctx, rest) : busy();
+        case "list": {
+          const rows = specTable(specsAbs(ctx), today());
+          return notify(ctx, rows.length ? [`Specs in ${settings.specsDir}/:`, ...rows].join("\n") : `No spec in ${settings.specsDir}/ yet.`);
+        }
         case "template":
           return createTemplate(ctx);
         case "settings":

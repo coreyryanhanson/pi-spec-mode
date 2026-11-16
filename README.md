@@ -25,6 +25,7 @@ pi -e ./                           # try a local checkout
 | `/spec` | Menu fitted to the current state |
 | `/spec start` | Enter spec mode, send nothing |
 | `/spec <request>` | Enter spec mode and send the request |
+| `/spec list` | Every spec, refused ones included: number, `Status`, `Last verified` and how many days ago |
 | `/spec agree` | Set the spec shown in the footer to `Agreed` and leave spec mode |
 | `/spec refuse [spec]` | Set a spec (default: the one in the footer) to `Refused` and move it to `specs/Refused/`: kept, but ignored by `/spec verify` and the agent |
 | `/spec restore <spec>` | Move a refused spec back to `specs/` as `Draft` |

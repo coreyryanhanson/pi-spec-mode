@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber,
-  refuseSpec, resolveSpec, restoreSpec, setField, sweepRefused, verifyQueue,
+  refuseSpec, resolveSpec, restoreSpec, setField, specTable, sweepRefused, verifyQueue,
 } from "../src/core.ts";
 
 const template = readFileSync(new URL("../templates/spec_template.md", import.meta.url), "utf8");
@@ -105,4 +105,14 @@ test("refused spec: restore undoes it, a hand-set Refused status is swept", () =
   assert.ok(resolveSpec(dir, "a"));
   assert.deepEqual(sweepRefused(dir, "2026-11-12").map((p) => p.split("/").slice(-2).join("/")), ["Refused/0002_spec_b.md"]);
   assert.ok(resolveSpec(dir, "b", true)?.includes("Refused"));
+});
+
+test("specTable lists every spec with status and verification age, Refused/ included", () => {
+  const dir = specsDir({ "0001_spec_login.md": spec("Agreed", "2026-11-06"), "Implemented/0002_spec_offline.md": spec("Implemented", "") });
+  refuseSpec(dir, join(dir, "0001_spec_login.md"), "2026-11-12");
+  const rows = specTable(dir, "2026-11-16");
+  assert.equal(rows.length, 2);
+  assert.match(rows[0], /^0001 +Refused +verified 2026-11-06 \(10 d ago\) +login$/);
+  assert.match(rows[1], /^0002 +Implemented +never verified +offline$/);
+  assert.deepEqual(specTable(specsDir({}), "2026-11-16"), []);
 });
