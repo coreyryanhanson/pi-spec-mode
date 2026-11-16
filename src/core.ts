@@ -123,7 +123,9 @@ export function isReadOnlyCommand(cmd: string): boolean {
   cmd = cmd.replace(/[0-9&]?>>?\s*\/dev\/null(?=[\s|;&)]|$)|[0-9]>&[0-9]/g, ""); // the lookahead refuses `>/dev/nullx`
   if (/[>`]|<\(/.test(cmd)) return false;
   // Expansions can produce a flag the check never saw: `$(…)`, `${X:--o}`, `$'\x2do'`, `$_`, `$IFS` splitting, `{-o,out}`.
-  if (/\$[A-Za-z_{('"]/.test(cmd.replace(/'[^']*'/g, "''")) || /\{[^}]*(,|\.\.)[^}]*\}/.test(cmd)) return false;
+  // Single quotes stop `$` only if each `'` is a real quote: a `'` inside "…", after `\`, in a comment or a heredoc is text.
+  const unquoted = /["\\#]|<</.test(cmd) ? cmd : cmd.replace(/'[^']*'/g, "''");
+  if (/\$[A-Za-z_{('"]/.test(unquoted) || /\{[^}]*(,|\.\.)[^}]*\}/.test(cmd)) return false;
   return cmd.split(/\|\||&&|[|;\n&]/).every((part) => {
     const w = part.trim().split(/\s+/);
     // rtk's pi extension rewrites commands to `rtk <cmd>` before spec mode sees them
