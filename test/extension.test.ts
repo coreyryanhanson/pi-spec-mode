@@ -417,6 +417,10 @@ test("verify run: stamping an Agreed spec keeps it Agreed, changing it or self-a
   assert.match(changed, /A rule nobody agreed\./);
   // Draft → Agreed by the agent: back to Draft.
   assert.match(await edit(b, "v4", AGREED), /\| Status \| Draft \|/);
+  // Implemented → Agreed by the agent (spec updated to match the code): stays Implemented.
+  const IMPL = FILLED.replace("| Status | Draft |", "| Status | Implemented |");
+  writeFileSync(a, IMPL);
+  assert.match(await edit(a, "v5", `${AGREED}\nRule fixed to match the code.\n`), /\| Status \| Implemented \|/);
 });
 
 test("a project whose own path has a folder starting with - can still write specs", async () => {

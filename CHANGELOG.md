@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.2
+
+- `/spec verify` never moves a spec back: an `Implemented` spec fixed to match the code stays `Implemented`. If the agent sets it to `Agreed`, its previous status is restored (it used to go back to `Draft`).
+
 ## 0.0.1
 
 - `/spec list`: every spec, refused ones included, with its `Status`, `Last verified` and how many days ago. Also in the `/spec` menu.

@@ -424,11 +424,12 @@ export default function specMode(pi: ExtensionAPI) {
     // Rule 2: a changed Agreed spec must be agreed again. A verify run may still move it to another status (Implemented).
     const changed = wasAgreed && (state.mode === "spec" || (isAgreed && unstamped(before) !== unstamped(md)));
     if (selfAgreed || changed) {
-      md = setField(md, "Status", "Draft");
+      // A verify run fixes a spec to match the code: a self-agreed one keeps the status it had (Implemented stays Implemented).
+      md = setField(md, "Status", selfAgreed && state.mode === "verify" ? getField(before, "Status") || "Draft" : "Draft");
       // From the Version before the edit: an edit that already bumped it is not bumped twice.
       if (wasAgreed) md = setField(md, "Version", String((Number(getField(before, "Version")) || 1) + 1));
       writeFileSync(abs, md);
-      notify(ctx, selfAgreed ? `${basename(p).slice(0, 4)}: only /spec agree can set a spec to Agreed, back to Draft` : `${basename(p).slice(0, 4)} changed: back to Draft, agree it again when ready`);
+      notify(ctx, selfAgreed ? `${basename(p).slice(0, 4)}: only /spec agree can set a spec to Agreed, back to ${getField(md, "Status")}` : `${basename(p).slice(0, 4)} changed: back to Draft, agree it again when ready`);
     }
     if (state.mode === "spec" && state.spec !== p) save(ctx, { ...state, spec: p });
     else refresh(ctx);
