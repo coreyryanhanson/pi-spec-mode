@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.0.1
 
 - `/spec list`: every spec, refused ones included, with its `Status`, `Last verified` and how many days ago. Also in the `/spec` menu.
 - `/spec agree` refuses a spec with an empty section: write "None" when nothing applies to bypass this.
