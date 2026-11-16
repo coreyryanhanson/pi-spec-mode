@@ -231,6 +231,19 @@ test("implement: needs plan mode, an Agreed spec, then dispatches /plan", async 
   assert.match(h.sent.user[1], /^\/plan Implement the agreed spec `specs\/Implemented\/0002_spec_y\.md`/);
 });
 
+test("/spec menu runs the same commands as typing them", async () => {
+  const h = harness({ plan: true, picks: ["Implement a spec", "1", "Start spec mode", "Leave spec mode"] });
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_x.md"), "| Status | Agreed |\n");
+  await h.commands.spec.handler("", h.ctx);
+  assert.match(h.sent.user[0], /^\/plan Implement the agreed spec `specs\/0001_spec_x\.md`/);
+  await h.commands.spec.handler("", h.ctx);
+  assert.equal(h.status(), "spec-mode");
+  await h.commands.spec.handler("", h.ctx);
+  assert.equal(h.status(), undefined);
+});
+
 test("state survives a reload", async () => {
   const h = harness();
   await h.fire("session_start");

@@ -28,6 +28,12 @@ const MUTEX = "workflow:mutex:v1"; // shared with @narumitw/pi-plan-mode: only o
 const READ_TOOLS = new Set(["read", "grep", "find", "ls", "spec_question", "spec_complete"]);
 const BUNDLED_TEMPLATE = fileURLToPath(new URL("../templates/spec_template.md", import.meta.url));
 const USAGE = "/spec start | <request> | agree | refuse [spec] | restore <spec> | verify | implement <spec> | template | exit | settings";
+/** `/spec` menu label → the subcommand it runs, and whether it first asks which spec. */
+const MENU: Record<string, [string, boolean]> = {
+  "Start spec mode": ["start", false], "Verify specs": ["verify", false], "Implement a spec": ["implement", true],
+  "Refuse a spec": ["refuse", true], "Restore a refused spec": ["restore", true], "Create the project template": ["template", false],
+  "Settings": ["settings", false], "Agree the spec": ["agree", false], "Refuse the spec": ["refuse", false], "Leave spec mode": ["exit", false],
+};
 const DEFAULT_SETTINGS: Settings = { specsDir: "specs", language: "English", verifyCount: 2 };
 
 export default function specMode(pi: ExtensionAPI) {
@@ -269,7 +275,7 @@ export default function specMode(pi: ExtensionAPI) {
       const items = valid.filter((s) => s.startsWith(prefix));
       return items.length ? items.map((value) => ({ value, label: value })) : null;
     },
-    handler: async (args, ctx) => {
+    handler: async function run(args, ctx): Promise<void> {
       const [sub = "", ...restWords] = args.trim().split(/\s+/);
       const rest = restWords.join(" ");
       const idle = ctx.isIdle();
@@ -285,23 +291,12 @@ export default function specMode(pi: ExtensionAPI) {
               ? ["Start spec mode", "Verify specs", "Implement a spec", "Refuse a spec", "Restore a refused spec", "Create the project template", "Settings"]
               : [...(state.spec ? ["Agree the spec", "Refuse the spec"] : []), "Leave spec mode", "Settings"];
           const pick = await ctx.ui.select("Spec mode", options);
-          if (pick === "Start spec mode") return idle ? void enter(ctx) : busy();
-          if (pick === "Verify specs") return idle ? (startVerify(ctx) ? pi.sendUserMessage("Verify the specs.") : undefined) : busy();
-          if (pick === "Implement a spec") {
-            const which = await ctx.ui.input("Spec number or name:", "0001");
-            return which ? implement(ctx, which) : undefined;
-          }
-          if (pick === "Refuse a spec" || pick === "Restore a refused spec") {
-            const which = await ctx.ui.input("Spec number or name:", "0001");
-            if (!which) return;
-            return idle ? (pick === "Refuse a spec" ? refuse(ctx, which) : restoreRefused(ctx, which)) : busy();
-          }
-          if (pick === "Refuse the spec") return idle ? refuse(ctx, "") : busy();
-          if (pick === "Agree the spec") return idle ? agree(ctx) : busy();
-          if (pick === "Leave spec mode") return idle ? exit(ctx) : busy();
-          if (pick === "Create the project template") return createTemplate(ctx);
-          if (pick === "Settings") return showSettings(ctx);
-          return;
+          const [menuSub, asksSpec] = (pick && MENU[pick]) || [];
+          // The menu runs the same command as typing it.
+          if (!menuSub) return;
+          if (!asksSpec) return run(menuSub, ctx);
+          const which = await ctx.ui.input("Spec number or name:", "0001");
+          return which ? run(`${menuSub} ${which}`, ctx) : undefined;
         }
         case "start": {
           if (!idle) return busy();
