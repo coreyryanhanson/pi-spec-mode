@@ -3,6 +3,7 @@
 ## Unreleased
 
 - `/spec list`: every spec, refused ones included, with its `Status`, `Last verified` and how many days ago. Also in the `/spec` menu.
+- `/spec agree` refuses a spec with an empty section: write "None" when nothing applies.
 
 ## 0.0.1-beta4
 

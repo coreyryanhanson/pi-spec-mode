@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
-  getField, isInside, isReadOnlyCommand, leftovers, listSpecs, missingSections,
+  emptySections, getField, isInside, isReadOnlyCommand, leftovers, listSpecs, missingSections,
   nextSpecNumber, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, specTable, sweepRefused, today, verifyQueue,
 } from "./core.ts";
 import { implementRequest, NORMAL_CONTRACT, specContract, verifyContract } from "./prompts.ts";
@@ -165,7 +165,7 @@ export default function specMode(pi: ExtensionAPI) {
     if (!p || !existsSync(p)) return notify(ctx, "No spec written yet in this spec mode session.", "warning");
     const md = readFileSync(p, "utf8");
     const tpl = template(ctx);
-    const problems = [...missingSections(md, tpl).map((h) => `missing section "${h}"`), ...leftovers(md, tpl)];
+    const problems = [...missingSections(md, tpl).map((h) => `missing section "${h}"`), ...emptySections(md).map((h) => `empty section "${h}": write "None" if nothing applies`), ...leftovers(md, tpl)];
     if (getField(md, "Status") === undefined) problems.push(`missing header row "Status"`); // setField would silently do nothing
     if (problems.length) return notify(ctx, `Cannot agree ${rel(ctx, p)}:\n- ${problems.join("\n- ")}`, "error");
     writeFileSync(p, setField(md, "Status", "Agreed"));

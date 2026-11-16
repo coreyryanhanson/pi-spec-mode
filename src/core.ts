@@ -59,6 +59,14 @@ export function missingSections(spec: string, template: string): string[] {
   return heads(template).filter((h) => !have.has(h));
 }
 
+/** `## ` sections with nothing under them: a section that does not apply says so ("None"). */
+export function emptySections(spec: string): string[] {
+  return spec.split(/^(?=## )/m)
+    .map((s) => s.split("\n"))
+    .filter(([head, ...body]) => head.startsWith("## ") && !body.join("\n").trim())
+    .map(([head]) => head.trim());
+}
+
 /** The `count` specs verified longest ago: empty date first, ties by path. Empty array when all are already today. */
 export function verifyQueue(specsDir: string, today: string, count = 2): string[] {
   const rows = listSpecs(specsDir).map((p) => ({ p, d: getField(readFileSync(p, "utf8"), "Last verified") ?? "" }));

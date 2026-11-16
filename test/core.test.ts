@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
-  getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber,
+  emptySections, getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber,
   refuseSpec, resolveSpec, restoreSpec, setField, specTable, sweepRefused, verifyQueue,
 } from "../src/core.ts";
 
@@ -44,6 +44,8 @@ test("agree check: the raw template fails, a filled spec passes", () => {
   const own = readFileSync(new URL("./fixtures/filled_spec.md", import.meta.url), "utf8");
   assert.deepEqual(leftovers(own, template), []);
   assert.deepEqual(missingSections(own, template), []);
+  assert.deepEqual(emptySections(own), []);
+  assert.deepEqual(emptySections("# x\n\n## 1. A\n\n## 2. B\ntext\n## 3. C\n  \n## 4. D"), ["## 1. A", "## 3. C", "## 4. D"]);
   assert.deepEqual(missingSections("## 1. Problem\n", template).length, 8);
 });
 
