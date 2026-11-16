@@ -9,6 +9,7 @@
 - The bash filter refuses a word starting with a glob (`sort *`): a file named `-o` in the project would turn it into a flag. Write `./*` instead. `$@`, `$*` and `$1` are refused too.
 - Spec mode refuses to write through a symbolic link under the specs folder (or the specs folder itself being one): a link shipped by a cloned repo can no longer send writes outside.
 - `/spec implement` accepts an implemented spec that was extended and agreed again (`Status` back to `Agreed` in `specs/Implemented/`).
+- `/spec <request>` starting with a command word (`/spec verify that login works offline`, `/spec start with…`) is sent as a request: `start`, `exit`, `off`, `agree`, `verify`, `template` and `settings` run only when typed alone.
 
 ## 0.0.1-beta3
 

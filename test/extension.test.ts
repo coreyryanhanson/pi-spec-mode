@@ -68,6 +68,10 @@ test("/spec <request> enters spec mode, contract and status follow", async () =>
   await h.commands.spec.handler("write the spec for offline mode", h.ctx);
   assert.deepEqual(h.sent.user, ["write the spec for offline mode"]);
   assert.equal(h.status(), "spec-mode");
+  // A request starting with a command word is sent as a request.
+  await h.commands.spec.handler("verify that login works offline", h.ctx);
+  assert.deepEqual(h.sent.user.at(-1), "verify that login works offline");
+  assert.equal(h.status(), "spec-mode");
   const contract = await h.prompt();
   assert.match(contract, /\[PI SPEC MODE CONTRACT v1: SPEC\]/);
   assert.match(contract, /specs\/0001_spec_<feature>\.md/);

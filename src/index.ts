@@ -274,8 +274,10 @@ export default function specMode(pi: ExtensionAPI) {
       const rest = restWords.join(" ");
       const idle = ctx.isIdle();
       const busy = () => notify(ctx, "The agent is running: wait or interrupt, then retry.", "warning");
+      // `/spec verify that login works offline` is a request: commands without an argument only match alone.
+      const isRequest = rest !== "" && ["start", "exit", "off", "agree", "verify", "template", "settings"].includes(sub);
 
-      switch (sub) {
+      switch (isRequest ? undefined : sub) {
         case "": {
           if (!ctx.hasUI) return notify(ctx, `Usage: ${USAGE}`);
           const options =
