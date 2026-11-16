@@ -302,6 +302,13 @@ test("only /spec agree makes a spec Agreed: an agent write that sets Agreed goes
   writeFileSync(p, AGREED);
   await h.fire("tool_result", ev2);
   assert.match(readFileSync(p, "utf8"), /\| Status \| Draft \|/);
+  // Same file through an upper-case extension (one file on macOS and Windows).
+  const upper = join(h.cwd, "specs/0001_spec_x.MD");
+  const ev3 = { ...ev, toolName: "edit", toolCallId: "e3", input: { path: "specs/0001_spec_x.MD" } };
+  await h.fire("tool_call", ev3);
+  writeFileSync(upper, AGREED);
+  await h.fire("tool_result", ev3);
+  assert.match(readFileSync(upper, "utf8"), /\| Status \| Draft \|/);
   await h.commands.spec.handler("implement 1", h.ctx);
   assert.deepEqual(h.sent.user, []);
 });

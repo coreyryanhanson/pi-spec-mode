@@ -2,7 +2,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
-export const SPEC_FILE = /^(\d{4})_spec_(.+)\.md$/;
+// `i`: on a case-insensitive disk (macOS, Windows) `x.MD` is the same file as `x.md`.
+export const SPEC_FILE = /^(\d{4})_spec_(.+)\.md$/i;
 
 /** Refused specs (in `Refused/`) are left out unless asked for: only numbering needs them. */
 export function listSpecs(specsDir: string, withRefused = false): string[] {
