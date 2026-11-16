@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.0.1-beta4
 
 - The bash filter refuses `$(…)` hidden behind a `'` that bash does not treat as a quote (inside `"…"`, after `\`, in a comment). A command mixing a single-quoted `$` with `"`, `\`, `#` or `<<` is now refused.
 - The bash filter refuses `2>&1x`: a `2>&1` redirect must end the word.
