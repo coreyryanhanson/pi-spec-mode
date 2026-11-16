@@ -185,7 +185,7 @@ export default function specMode(pi: ExtensionAPI) {
     if (!arg.trim()) return notify(ctx, "Which spec? /spec implement <number or name>", "warning");
     const p = resolveSpec(specsAbs(ctx), arg);
     if (!p) return notify(ctx, `No spec "${arg}" in ${settings.specsDir}/ or ${settings.specsDir}/Implemented/`, "warning");
-    if (basename(dirname(p)) === "Implemented") return notify(ctx, `${rel(ctx, p)} is already implemented.`, "warning");
+    // An extended spec in Implemented/ is Agreed again: the Status check alone decides.
     const status = getField(readFileSync(p, "utf8"), "Status");
     if (status !== "Agreed") return notify(ctx, `${rel(ctx, p)} is ${status ?? "not Agreed"}: agree it first (/spec agree).`, "warning");
     if (!ctx.isIdle()) return notify(ctx, "The agent is running: wait or interrupt, then retry.", "warning");

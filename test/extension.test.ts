@@ -217,6 +217,14 @@ test("implement: needs plan mode, an Agreed spec, then dispatches /plan", async 
   await h.commands.spec.handler("implement x", h.ctx);
   assert.match(h.sent.user[0], /^\/plan Implement the agreed spec `specs\/0001_spec_x\.md`/);
   assert.match(h.sent.user[0], /specs\/Implemented\//);
+  // An implemented spec is refused; extended and agreed again, it goes to plan mode.
+  mkdirSync(join(h.cwd, "specs/Implemented"));
+  writeFileSync(join(h.cwd, "specs/Implemented/0002_spec_y.md"), "| Status | Implemented |\n");
+  await h.commands.spec.handler("implement 2", h.ctx);
+  assert.match(h.notes.at(-1)!, /Implemented: agree it first/);
+  writeFileSync(join(h.cwd, "specs/Implemented/0002_spec_y.md"), "| Status | Agreed |\n");
+  await h.commands.spec.handler("implement 2", h.ctx);
+  assert.match(h.sent.user[1], /^\/plan Implement the agreed spec `specs\/Implemented\/0002_spec_y\.md`/);
 });
 
 test("state survives a reload", async () => {
