@@ -5,7 +5,7 @@
 [![pi extension](https://img.shields.io/badge/pi-extension-8A2BE2)](https://pi.dev)
 [![node](https://img.shields.io/badge/node-%3E%3D22.19-339933)](https://nodejs.org)
 
-A [pi](https://pi.dev) extension that adds a **spec mode**: write a feature spec with the agent, agree it, keep it true to the code, and hand it to plan mode to build.
+A [pi](https://pi.dev) extension that adds a **specification mode**: write a feature spec with the agent, agree it, keep it true to the code, and hand it to plan mode to build.
 
 A spec says what a feature is and how it behaves; it never describes code.
 
@@ -106,3 +106,19 @@ npm run typecheck
 
 - **Conflict check depends on section names.** The existing specs are summarised by their H1 title and the first line of a section named `Goal` (with or without a number, e.g. `## 2. Goal`). If your template renames it (`## Objectif`, `## Purpose`…), each spec is listed by its title only, and conflicts are detected less reliably. Keep a heading named `Goal` in your template to get the full summary.
 - **Conflict check is a model instruction, not code.** The agent is asked to read the related specs and report contradictions; nothing enforces that it does. `/spec verify` remains the safety net.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
+
+## My other pi extensions
+
+| Extension | What it does | Install |
+|---|---|---|
+| [pi-deepseek-peak](https://github.com/psychobarge/pi-deepseek-peak) | Shows DeepSeek peak-hour status and corrects session prices | `pi install npm:pi-deepseek-peak` |
+| [pi-deepseek-vision](https://github.com/psychobarge/pi-deepseek-vision) | Gives DeepSeek vision through a local or remote vision LLM | `pi install npm:pi-deepseek-vision` |
+
+## License
+
+MIT
+
