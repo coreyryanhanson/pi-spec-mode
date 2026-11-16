@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- The bash filter refuses `$(…)` hidden behind a `'` that bash does not treat as a quote (inside `"…"`, after `\`, in a comment). A command mixing a single-quoted `$` with `"`, `\`, `#` or `<<` is now refused.
+- The bash filter refuses `2>&1x`: a `2>&1` redirect must end the word.
+- Spec names match `.md` in any case: on macOS and Windows, writing `0001_spec_x.MD` no longer skips the "only `/spec agree` agrees" check.
+- Spec mode writes only Markdown (`.md`) files under the specs folder, so the agent cannot plant a git config that `git status` would run.
+
 ## 0.0.1-beta3
 
 - Spec mode writes exactly the path it checked: paths that pi rewrites (`@x`, `~/x`, `file://…`) can no longer escape the specs folder.

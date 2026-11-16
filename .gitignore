@@ -3,4 +3,5 @@ node_modules/
 *.tgz
 .pi/
 specs/
+audits/
 AUDIT-*.md
