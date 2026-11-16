@@ -30,6 +30,7 @@ pi -e ./                           # try a local checkout
 | `/spec refuse [spec]` | Set a spec (default: the one in the footer) to `Refused` and move it to `specs/Refused/`: kept, but ignored by `/spec verify` and the agent |
 | `/spec restore <spec>` | Move a refused spec back to `specs/` as `Draft` |
 | `/spec verify` | Check the `verifyCount` specs verified longest ago against the code |
+| `/spec verify <spec>` | Check one spec against the code, even if already verified today |
 | `/spec implement <spec>` | Hand an `Agreed` spec to plan mode |
 | `/spec template` | Copy the generic template to `specs/spec_template.md` to adapt it |
 | `/spec exit` | Leave spec mode |

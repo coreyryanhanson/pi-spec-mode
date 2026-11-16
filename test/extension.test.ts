@@ -216,6 +216,22 @@ test("verify run: picks the two oldest, uses its contract, returns to previous m
   assert.equal(h.status(), undefined);
 });
 
+test("/spec verify <spec> checks only that spec, even if verified today", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs/Implemented"), { recursive: true });
+  for (const [f, d] of [["0001_spec_a.md", ""], ["Implemented/0002_spec_b.md", "2026-11-16"]])
+    writeFileSync(join(h.cwd, "specs", f), `| Status | Agreed |\n| Last verified | ${d} |\n`);
+  await h.commands.spec.handler("verify 2", h.ctx);
+  assert.deepEqual(h.sent.user, ["Verify the specs."]);
+  assert.match(await h.prompt(), /in this order: `specs\/Implemented\/0002_spec_b\.md`\./);
+  await h.fire("agent_settled", { aborted: false });
+  // Not a spec name: still a request.
+  await h.commands.spec.handler("verify that login works offline", h.ctx);
+  assert.equal(h.sent.user.at(-1), "verify that login works offline");
+  assert.equal(h.status(), "spec-mode");
+});
+
 test("implement: needs plan mode, an Agreed spec, then dispatches /plan", async () => {
   const none = harness();
   await none.fire("session_start");

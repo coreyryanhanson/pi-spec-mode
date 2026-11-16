@@ -3,7 +3,8 @@
 ## Unreleased
 
 - `/spec list`: every spec, refused ones included, with its `Status`, `Last verified` and how many days ago. Also in the `/spec` menu.
-- `/spec agree` refuses a spec with an empty section: write "None" when nothing applies.
+- `/spec agree` refuses a spec with an empty section: write "None" when nothing applies to bypass this.
+- `/spec verify <spec>` checks one spec, even if already verified today. `/spec verify` followed by anything that is not a spec name is still sent as a request and not a command. Works with for example 3, 0003, offline_mode, or the complete file name.
 
 ## 0.0.1-beta4
 

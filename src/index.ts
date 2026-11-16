@@ -27,7 +27,7 @@ const SECTION = "spec-mode";
 const MUTEX = "workflow:mutex:v1"; // shared with @narumitw/pi-plan-mode: only one agent workflow at a time
 const READ_TOOLS = new Set(["read", "grep", "find", "ls", "spec_question", "spec_complete"]);
 const BUNDLED_TEMPLATE = fileURLToPath(new URL("../templates/spec_template.md", import.meta.url));
-const USAGE = "/spec start | <request> | list | agree | refuse [spec] | restore <spec> | verify | implement <spec> | template | exit | settings";
+const USAGE = "/spec start | <request> | list | agree | refuse [spec] | restore <spec> | verify [spec] | implement <spec> | template | exit | settings";
 /** `/spec` menu label → the subcommand it runs, and whether it first asks which spec. */
 const MENU: Record<string, [string, boolean]> = {
   "Start spec mode": ["start", false], "List specs": ["list", false], "Verify specs": ["verify", false], "Implement a spec": ["implement", true],
@@ -173,11 +173,14 @@ export default function specMode(pi: ExtensionAPI) {
   }
 
   /** Puts the session in a verify run; the caller sends the message that starts it. */
-  function startVerify(ctx: ExtensionContext): boolean {
+  function startVerify(ctx: ExtensionContext, arg = ""): boolean {
     if (state.mode === "verify") return notify(ctx, "A verify run is already in progress.", "warning"), false;
     sweep(ctx);
-    const targets = verifyQueue(specsAbs(ctx), today(), settings.verifyCount);
     if (!listSpecs(specsAbs(ctx)).length) return notify(ctx, `No specs in ${settings.specsDir}/ to verify.`), false;
+    // A named spec is verified even if already verified today: the user asked for it.
+    const one = arg && resolveSpec(specsAbs(ctx), arg);
+    if (arg && !one) return notify(ctx, `No spec "${arg}" to verify in ${settings.specsDir}/ or ${settings.specsDir}/Implemented/`, "warning"), false;
+    const targets = one ? [one] : verifyQueue(specsAbs(ctx), today(), settings.verifyCount);
     if (!targets.length) return notify(ctx, `The ${settings.verifyCount} oldest specs were already verified today: nothing to do.`), false;
     if (state.mode === "off" && otherWorkflowActive(ctx))
       return notify(ctx, "Plan mode (or another workflow) is active: exit it before verifying specs.", "warning"), false;
@@ -281,7 +284,9 @@ export default function specMode(pi: ExtensionAPI) {
       const idle = ctx.isIdle();
       const busy = () => notify(ctx, "The agent is running: wait or interrupt, then retry.", "warning");
       // `/spec verify that login works offline` is a request: commands without an argument only match alone.
-      const isRequest = rest !== "" && ["start", "list", "exit", "off", "agree", "verify", "template", "settings"].includes(sub);
+      // `/spec verify 0003` names a spec, so it is the command.
+      const verifiesSpec = sub === "verify" && rest !== "" && !!resolveSpec(specsAbs(ctx), rest);
+      const isRequest = rest !== "" && !verifiesSpec && ["start", "list", "exit", "off", "agree", "verify", "template", "settings"].includes(sub);
 
       switch (isRequest ? undefined : sub) {
         case "": {
@@ -310,7 +315,7 @@ export default function specMode(pi: ExtensionAPI) {
           return idle ? agree(ctx) : busy();
         case "verify":
           if (!idle) return busy();
-          if (startVerify(ctx)) pi.sendUserMessage("Verify the specs.");
+          if (startVerify(ctx, rest)) pi.sendUserMessage("Verify the specs.");
           return;
         case "implement":
           return implement(ctx, rest);
