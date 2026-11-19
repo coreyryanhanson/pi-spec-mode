@@ -380,6 +380,17 @@ test("/spec settings says which files exist and reloads a project file created l
   assert.match(h.notes.at(-1)!, /"specsDir": "doc\/specs"/);
 });
 
+test("a non-string language setting falls back to English instead of reaching the contract", async () => {
+  const h = harness();
+  h.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(h.cwd, ".pi"), { recursive: true });
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "language": 3 }');
+  await h.fire("session_start");
+  assert.match(h.notes.at(-1)!, /language must be a non-empty string/);
+  await h.commands.spec.handler("start", h.ctx);
+  assert.match(await h.prompt(), /Write the spec in English/);
+});
+
 test("agent setting an Agreed spec to Refused moves it instead of resetting it to Draft", async () => {
   const h = harness();
   await h.fire("session_start");

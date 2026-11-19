@@ -90,7 +90,7 @@ copies the generic template to `specs/spec_template.md`. Rename its sections, re
 }
 ```
 
-`language` is the language specs are written in, whatever the language of the conversation.
+`language` is the language specs are written in, whatever the language of the conversation. Anything but a non-empty string is ignored with a warning and `"English"` is used.
 
 `verifyCount` is how many specs `/spec verify` checks per run.
 

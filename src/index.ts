@@ -71,6 +71,10 @@ export default function specMode(pi: ExtensionAPI) {
       notify(ctx, `pi-spec-mode: specsDir must be a folder inside the project, using "specs"`, "warning");
       s.specsDir = "specs";
     }
+    if (typeof s.language !== "string" || !s.language.trim()) {
+      notify(ctx, `pi-spec-mode: language must be a non-empty string, using "English"`, "warning");
+      s.language = "English";
+    }
     if (!Number.isInteger(s.verifyCount) || s.verifyCount < 1) {
       notify(ctx, `pi-spec-mode: verifyCount must be a positive integer, using 2`, "warning");
       s.verifyCount = 2;

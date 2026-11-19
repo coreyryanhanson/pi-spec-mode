@@ -2,6 +2,7 @@
 
 ## unreleased
 
+- A `language` setting that is not a non-empty string (`3`, `null`, `""`) is ignored with a warning and replaced by `"English"`: it used to reach the spec contract verbatim and the agent wrote in an unpredictable language.
 - `examples/0001_spec_dark_mode.md` ships with the package: a deliberately barebone but complete spec to read before writing your own. The tests read their fixture from it, so it cannot drift from the format `/spec agree` accepts.
 
 - GitHub Actions runs `npm run typecheck` and `npm test` on every push and pull request (Node 22): a regression in the bash filter or the status rules now shows up without anyone remembering to run the tests.
