@@ -22,7 +22,7 @@ pi -e ./                           # try a local checkout
 
 | Command | What it does |
 |---|---|
-| `/spec` | Menu fitted to the current state |
+| `/spec` | Menu fitted to the current state: implement, refuse and restore then pick the spec from a list of the ones they accept (type the number instead if you prefer: `/spec implement 0003`) |
 | `/spec start` | Enter spec mode, send nothing |
 | `/spec <request>` | Enter spec mode and send the request |
 | `/spec list` | Every spec, refused ones included: number, `Status`, `Last verified` and how many days ago |

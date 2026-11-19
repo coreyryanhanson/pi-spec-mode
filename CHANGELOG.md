@@ -1,9 +1,10 @@
 # Changelog
 
-## 0.0.2
+## unreleased
 
 - GitHub Actions runs `npm run typecheck` and `npm test` on every push and pull request (Node 22): a regression in the bash filter or the status rules now shows up without anyone remembering to run the tests.
 - `/spec verify` never moves a spec back: an `Implemented` spec fixed to match the code stays `Implemented`. If the agent sets it to `Agreed`, its previous status is restored (it used to go back to `Draft`).
+- The `/spec` menu no longer asks you to type a spec number: “Implement a spec”, “Refuse a spec” and “Restore a refused spec” show a list of the specs they accept (`0001 · Agreed · login`), filtered on what the action can act on: only `Agreed` specs can be implemented, only `specs/Refused/` ones restored, and only the specs folder is offered for a refusal. Nothing to offer → a message naming the command to type. `/spec implement 0003` and friends still work.
 
 ## 0.0.1
 

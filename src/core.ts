@@ -1,6 +1,6 @@
 // Pure helpers: no pi imports, so `node --test` can load them directly.
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 // `i`: on a case-insensitive disk (macOS, Windows) `x.MD` is the same file as `x.md`.
 export const SPEC_FILE = /^(\d{4})_spec_(.+)\.md$/i;
@@ -93,6 +93,27 @@ export function specTable(specsDir: string, today: string): string[] {
     const verified = d ? `verified ${d}${age}` : "never verified";
     return `${num}  ${(getField(md, "Status") || "?").padEnd(11)}  ${verified.padEnd(32)}  ${name}`;
   });
+}
+
+export interface SpecChoice {
+  num: string;
+  status: string;
+  folder: "" | "Implemented" | "Refused";
+  label: string; // what the picker shows
+  arg: string; // what the command accepts: the number, which is unique
+}
+
+/** One picker entry per spec, Refused/ included: `0001 · Agreed · login`. */
+export function specChoices(specsDir: string): SpecChoice[] {
+  return listSpecs(specsDir, true)
+    .sort((a, b) => basename(a).localeCompare(basename(b)))
+    .map((p): SpecChoice => {
+      const [, num, name] = SPEC_FILE.exec(basename(p))!;
+      const status = getField(readFileSync(p, "utf8"), "Status") || "?";
+      const dir = basename(dirname(p));
+      const folder = dir === "Implemented" || dir === "Refused" ? dir : "";
+      return { num, status, folder, label: `${num} · ${status} · ${name}`, arg: num };
+    });
 }
 
 export const REFUSED_BANNER = (date: string) =>
