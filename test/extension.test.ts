@@ -367,6 +367,55 @@ test("/spec agree <spec> re-agrees a named Draft spec without sending a request"
   assert.match(h.notes.at(-1)!, /0001 agreed/);
 });
 
+test("/spec agree <spec> on another spec keeps the one in progress in spec mode", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  await h.commands.spec.handler("start", h.ctx);
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), FILLED);
+  writeFileSync(join(h.cwd, "specs/0002_spec_b.md"), FILLED);
+  await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0002_spec_b.md" }, isError: false });
+  assert.equal(h.status(), "spec-mode 0002 · Draft");
+  await h.commands.spec.handler("agree 1", h.ctx);
+  assert.match(h.notes.at(-1)!, /0001 agreed/);
+  assert.match(readFileSync(join(h.cwd, "specs/0001_spec_a.md"), "utf8"), /\| Status \| Agreed \|/);
+  assert.equal(h.status(), "spec-mode 0002 · Draft");
+  assert.deepEqual(h.sent.custom, []); // spec mode never stopped: no NORMAL contract
+});
+
+test("refusing the spec in progress leaves spec mode, refusing another one keeps it", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  await h.commands.spec.handler("start", h.ctx);
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), FILLED);
+  writeFileSync(join(h.cwd, "specs/0002_spec_b.md"), FILLED);
+  await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0002_spec_b.md" }, isError: false });
+  await h.commands.spec.handler("refuse 1", h.ctx);
+  assert.ok(existsSync(join(h.cwd, "specs/Refused/0001_spec_a.md")));
+  assert.equal(h.status(), "spec-mode 0002 · Draft");
+  await h.commands.spec.handler("refuse", h.ctx);
+  assert.ok(existsSync(join(h.cwd, "specs/Refused/0002_spec_b.md")));
+  assert.match(h.notes.at(-1)!, /0002 refused[\s\S]*spec mode off/);
+  assert.equal(h.status(), undefined);
+  assert.match(h.sent.custom.at(-1).content, /CONTRACT v1: NORMAL/);
+});
+
+test("a spec in progress set to Refused by hand leaves spec mode", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  await h.commands.spec.handler("start", h.ctx);
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), FILLED);
+  await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0001_spec_a.md" }, isError: false });
+  const input = { path: "specs/0001_spec_a.md" };
+  await h.fire("tool_call", { toolName: "edit", toolCallId: "e1", input });
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), FILLED.replace("| Status | Draft |", "| Status | Refused |"));
+  await h.fire("tool_result", { toolName: "edit", toolCallId: "e1", input, isError: false });
+  assert.ok(existsSync(join(h.cwd, "specs/Refused/0001_spec_a.md")));
+  assert.equal(h.status(), undefined);
+});
+
 test("/spec agree <spec> refuses an implemented spec", async () => {
   const h = harness();
   await h.fire("session_start");

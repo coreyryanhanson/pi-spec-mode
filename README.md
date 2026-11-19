@@ -26,8 +26,8 @@ pi -e ./                           # try a local checkout
 | `/spec start` | Enter spec mode, send nothing |
 | `/spec <request>` | Enter spec mode and send the request |
 | `/spec list` | Every spec, refused ones included: number, `Status`, `Last verified` and how many days ago |
-| `/spec agree [spec]` | Set the spec shown in the footer to `Agreed` and leave spec mode; with a spec name, agree that `Draft` spec (`/spec agree 0003`), whatever the mode |
-| `/spec refuse [spec]` | Set a spec (default: the one in the footer) to `Refused` and move it to `specs/Refused/`: kept, but ignored by `/spec verify` and the agent |
+| `/spec agree [spec]` | Set the spec shown in the footer to `Agreed` and leave spec mode; with a spec name, agree that `Draft` spec (`/spec agree 0003`) whatever the mode, without closing the spec being written |
+| `/spec refuse [spec]` | Set a spec (default: the one in the footer) to `Refused` and move it to `specs/Refused/`: kept, but ignored by `/spec verify` and the agent. Refusing the spec in the footer leaves spec mode |
 | `/spec restore <spec>` | Move a refused spec back to `specs/` as `Draft` |
 | `/spec verify` | Check the `verifyCount` specs verified longest ago against the code |
 | `/spec verify <spec>` | Check one spec against the code, even if already verified today |
@@ -38,7 +38,7 @@ pi -e ./                           # try a local checkout
 
 While in spec mode the footer shows `spec-mode` (then `spec-mode 0003 · Draft`); nothing when off. The agent can read the whole project, run only read-only shell commands, and write only Markdown files inside the specs folder. Before calling `spec_complete`, it checks the new spec against existing ones: it sees each spec's title and Goal sentence only, reads in full the `Agreed` and `Implemented` specs on the same subject, and asks about any contradicting rule. This keeps the context small but is not exhaustive: a conflicting rule in a spec whose title and goal look unrelated is missed (`/spec verify` remains the safety net). It asks decisions through `spec_question` and calls `spec_complete` when the spec is ready, which opens an **Agree / Keep discussing / Leave** menu.
 
-Specs live in `specs/NNNN_spec_<feature>.md`; implemented ones move to `specs/Implemented/`, refused ones to `specs/Refused/` (also when you set `Status` to `Refused` by hand).
+Specs live in `specs/NNNN_spec_<feature>.md`; implemented ones move to `specs/Implemented/`, refused ones to `specs/Refused/` (also when you set `Status` to `Refused` by hand, which leaves spec mode if it was the spec being written).
 
 ```mermaid
 flowchart LR

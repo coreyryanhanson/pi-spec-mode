@@ -218,8 +218,9 @@ export default function specMode(pi: ExtensionAPI) {
     const problems = agreeFile(ctx, p);
     if (problems.length) return notify(ctx, `Cannot agree ${rel(ctx, p)}:\n- ${problems.join("\n- ")}`, "error");
     const done = `${basename(p).slice(0, 4)} agreed`;
-    if (state.mode === "spec") exit(ctx, done);
-    else notify(ctx, done);
+    // Agreeing the spec in progress closes the session; one agreed on the side leaves it running.
+    if (state.mode === "spec" && state.spec && resolve(ctx.cwd, state.spec) === p) return exit(ctx, done);
+    notify(ctx, done);
   }
 
   /** Ends a verify run: each spec it sent back to Draft is offered for a fresh agreement, one question per spec. */
@@ -283,8 +284,10 @@ export default function specMode(pi: ExtensionAPI) {
     } catch (e) {
       return notify(ctx, `Cannot refuse ${rel(ctx, p)}: ${(e as Error).message}`, "error");
     }
-    if (state.spec && resolve(ctx.cwd, state.spec) === p) save(ctx, { ...state, spec: undefined });
-    notify(ctx, `${basename(p).slice(0, 4)} refused, moved to ${rel(ctx, dest)}`);
+    const msg = `${basename(p).slice(0, 4)} refused, moved to ${rel(ctx, dest)}`;
+    // Refusing the spec being written ends the session: nothing is left to write.
+    if (state.mode !== "off" && state.spec && resolve(ctx.cwd, state.spec) === p) return exit(ctx, `${msg} — spec mode off`);
+    notify(ctx, msg);
   }
 
   /** Brings a refused spec back to the specs folder as Draft. */
@@ -300,16 +303,22 @@ export default function specMode(pi: ExtensionAPI) {
     }
   }
 
-  /** A spec set to Refused by hand or by the agent is moved like /spec refuse would. */
-  function sweep(ctx: ExtensionContext) {
+  /** A spec set to Refused by hand or by the agent is moved like /spec refuse would; true when that ended spec mode. */
+  function sweep(ctx: ExtensionContext): boolean {
+    let left = false;
     try {
       for (const p of sweepRefused(specsAbs(ctx), today())) {
-        if (state.spec && basename(state.spec) === basename(p)) save(ctx, { ...state, spec: undefined });
-        notify(ctx, `${basename(p).slice(0, 4)} is Refused: moved to ${rel(ctx, p)}`);
+        const msg = `${basename(p).slice(0, 4)} is Refused: moved to ${rel(ctx, p)}`;
+        // Same rule as /spec refuse: the spec being written refused by hand also ends spec mode.
+        if (state.mode !== "off" && state.spec && basename(state.spec) === basename(p)) {
+          exit(ctx, `${msg} — spec mode off`);
+          left = true;
+        } else notify(ctx, msg);
       }
     } catch (e) {
       notify(ctx, `pi-spec-mode: could not move a refused spec: ${(e as Error).message}`, "warning");
     }
+    return left;
   }
 
   function showSettings(ctx: ExtensionContext) {
@@ -419,7 +428,7 @@ export default function specMode(pi: ExtensionAPI) {
       sections[SECTION] = verifyContract(settings.specsDir, today(), state.targets ?? []);
       return;
     }
-    sweep(ctx);
+    if (sweep(ctx)) return; // the sweep refused the spec being written: no spec contract this turn
     const specs = listSpecs(specsAbs(ctx)).map((p) => {
       const md = readFileSync(p, "utf8");
       return `${rel(ctx, p)} — ${getField(md, "Status") ?? "?"} — ${specSummary(md)}`;
@@ -482,7 +491,10 @@ export default function specMode(pi: ExtensionAPI) {
     const abs = resolve(ctx.cwd, p);
     let md = readFileSync(abs, "utf8");
     // Refused wins over the "back to Draft" rules below.
-    if (getField(md, "Status") === "Refused") return sweep(ctx);
+    if (getField(md, "Status") === "Refused") {
+      sweep(ctx);
+      return;
+    }
     const wasAgreed = getField(before, "Status") === "Agreed";
     const isAgreed = getField(md, "Status") === "Agreed";
     // A verify run stamps `Last verified` on an Agreed spec: that alone is not a change.
