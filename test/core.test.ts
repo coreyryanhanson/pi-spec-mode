@@ -41,7 +41,7 @@ test("header fields read and write", () => {
 
 test("agree check: the raw template fails, a filled spec passes", () => {
   assert.ok(leftovers(template, template).length > 0);
-  const own = readFileSync(new URL("./fixtures/filled_spec.md", import.meta.url), "utf8");
+  const own = readFileSync(new URL("../examples/0001_spec_dark_mode.md", import.meta.url), "utf8");
   assert.deepEqual(leftovers(own, template), []);
   assert.deepEqual(missingSections(own, template), []);
   assert.deepEqual(emptySections(own), []);

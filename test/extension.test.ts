@@ -60,7 +60,7 @@ function harness(opts: { plan?: boolean; picks?: string[] } = {}) {
 }
 
 const TEMPLATE = readFileSync(new URL("../templates/spec_template.md", import.meta.url), "utf8");
-const FILLED = readFileSync(new URL("./fixtures/filled_spec.md", import.meta.url), "utf8");
+const FILLED = readFileSync(new URL("../examples/0001_spec_dark_mode.md", import.meta.url), "utf8");
 
 test("/spec <request> enters spec mode, contract and status follow", async () => {
   const h = harness();

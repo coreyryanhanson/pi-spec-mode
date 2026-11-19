@@ -70,7 +70,7 @@ flowchart LR
 
 ## Make your own template (do it)
 
-The [bundled template](templates/spec_template.md) is deliberately generic. Spec quality comes from a template that speaks your project's language: a game needs "feel" and balance numbers, an API needs contracts and error codes, a mobile app needs screens and offline states.
+The [bundled template](templates/spec_template.md) is deliberately generic. Spec quality comes from a template that speaks your project's language: a game needs "feel" and balance numbers, an API needs contracts and error codes, a mobile app needs screens and offline states. For the level of detail expected, read [a complete spec](examples/0001_spec_dark_mode.md): deliberately barebone — short sections, one rule per line, one number with its reason. Real specs usually say more.
 
 ```
 /spec template
