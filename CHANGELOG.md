@@ -2,6 +2,7 @@
 
 ## 0.0.2
 
+- GitHub Actions runs `npm run typecheck` and `npm test` on every push and pull request (Node 22): a regression in the bash filter or the status rules now shows up without anyone remembering to run the tests.
 - `/spec verify` never moves a spec back: an `Implemented` spec fixed to match the code stays `Implemented`. If the agent sets it to `Agreed`, its previous status is restored (it used to go back to `Draft`).
 
 ## 0.0.1
