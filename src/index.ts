@@ -5,7 +5,7 @@ import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil
 import { Type } from "typebox";
 import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, listSpecs, missingSections,
-  nextSpecNumber, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, specSummary, specTable, sweepRefused, today, verifyQueue,
+  nextSpecNumber, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, specChoices, type SpecChoice, specSummary, specTable, sweepRefused, today, verifyQueue,
 } from "./core.ts";
 import { implementRequest, NORMAL_CONTRACT, specContract, verifyContract } from "./prompts.ts";
 
@@ -35,6 +35,12 @@ const MENU: Record<string, [string, boolean]> = {
   "Settings": ["settings", false], "Agree the spec": ["agree", false], "Refuse the spec": ["refuse", false], "Leave spec mode": ["exit", false],
 };
 const DEFAULT_SETTINGS: Settings = { specsDir: "specs", language: "English", verifyCount: 2 };
+/** Menu action → what to say when its picker has nothing to offer. */
+const PICKER_EMPTY: Record<string, string> = {
+  implement: "No Agreed spec to implement: agree one first (/spec agree).",
+  restore: "No refused spec to restore.",
+  refuse: "No spec to refuse.",
+};
 
 export default function specMode(pi: ExtensionAPI) {
   let state: State = { mode: "off" };
@@ -65,6 +71,10 @@ export default function specMode(pi: ExtensionAPI) {
       notify(ctx, `pi-spec-mode: specsDir must be a folder inside the project, using "specs"`, "warning");
       s.specsDir = "specs";
     }
+    if (typeof s.language !== "string" || !s.language.trim()) {
+      notify(ctx, `pi-spec-mode: language must be a non-empty string, using "English"`, "warning");
+      s.language = "English";
+    }
     if (!Number.isInteger(s.verifyCount) || s.verifyCount < 1) {
       notify(ctx, `pi-spec-mode: verifyCount must be a positive integer, using 2`, "warning");
       s.verifyCount = 2;
@@ -89,6 +99,14 @@ export default function specMode(pi: ExtensionAPI) {
   function specStatus(ctx: ExtensionContext, p: string): string | undefined {
     const abs = resolve(ctx.cwd, p);
     return existsSync(abs) ? getField(readFileSync(abs, "utf8"), "Status") : undefined;
+  }
+
+  /** What a menu action may act on: only an Agreed spec can be implemented, only a Refused/ one restored. */
+  function specPicker(ctx: ExtensionContext, sub: string): SpecChoice[] {
+    const all = specChoices(specsAbs(ctx));
+    if (sub === "implement") return all.filter((c) => c.status === "Agreed");
+    if (sub === "restore") return all.filter((c) => c.folder === "Refused");
+    return all.filter((c) => c.folder === ""); // refuse resolves only in the specs folder
   }
 
   function refresh(ctx: ExtensionContext) {
@@ -300,8 +318,11 @@ export default function specMode(pi: ExtensionAPI) {
           // The menu runs the same command as typing it.
           if (!menuSub) return;
           if (!asksSpec) return run(menuSub, ctx);
-          const which = await ctx.ui.input("Spec number or name:", "0001");
-          return which ? run(`${menuSub} ${which}`, ctx) : undefined;
+          const choices = specPicker(ctx, menuSub);
+          if (!choices.length) return notify(ctx, PICKER_EMPTY[menuSub] ?? "No spec to pick.", "warning");
+          const which = await ctx.ui.select(`${menuSub}: which spec?`, choices.map((c) => c.label));
+          const arg = choices.find((c) => c.label === which)?.arg;
+          return arg ? run(`${menuSub} ${arg}`, ctx) : undefined;
         }
         case "start": {
           if (!idle) return busy();
@@ -424,11 +445,12 @@ export default function specMode(pi: ExtensionAPI) {
     // Rule 2: a changed Agreed spec must be agreed again. A verify run may still move it to another status (Implemented).
     const changed = wasAgreed && (state.mode === "spec" || (isAgreed && unstamped(before) !== unstamped(md)));
     if (selfAgreed || changed) {
-      md = setField(md, "Status", "Draft");
+      // A verify run fixes a spec to match the code: a self-agreed one keeps the status it had (Implemented stays Implemented).
+      md = setField(md, "Status", selfAgreed && state.mode === "verify" ? getField(before, "Status") || "Draft" : "Draft");
       // From the Version before the edit: an edit that already bumped it is not bumped twice.
       if (wasAgreed) md = setField(md, "Version", String((Number(getField(before, "Version")) || 1) + 1));
       writeFileSync(abs, md);
-      notify(ctx, selfAgreed ? `${basename(p).slice(0, 4)}: only /spec agree can set a spec to Agreed, back to Draft` : `${basename(p).slice(0, 4)} changed: back to Draft, agree it again when ready`);
+      notify(ctx, selfAgreed ? `${basename(p).slice(0, 4)}: only /spec agree can set a spec to Agreed, back to ${getField(md, "Status")}` : `${basename(p).slice(0, 4)} changed: back to Draft, agree it again when ready`);
     }
     if (state.mode === "spec" && state.spec !== p) save(ctx, { ...state, spec: p });
     else refresh(ctx);

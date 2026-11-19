@@ -22,7 +22,7 @@ pi -e ./                           # try a local checkout
 
 | Command | What it does |
 |---|---|
-| `/spec` | Menu fitted to the current state |
+| `/spec` | Menu fitted to the current state: implement, refuse and restore then pick the spec from a list of the ones they accept (type the number instead if you prefer: `/spec implement 0003`) |
 | `/spec start` | Enter spec mode, send nothing |
 | `/spec <request>` | Enter spec mode and send the request |
 | `/spec list` | Every spec, refused ones included: number, `Status`, `Last verified` and how many days ago |
@@ -70,7 +70,7 @@ flowchart LR
 
 ## Make your own template (do it)
 
-The [bundled template](templates/spec_template.md) is deliberately generic. Spec quality comes from a template that speaks your project's language: a game needs "feel" and balance numbers, an API needs contracts and error codes, a mobile app needs screens and offline states.
+The [bundled template](templates/spec_template.md) is deliberately generic. Spec quality comes from a template that speaks your project's language: a game needs "feel" and balance numbers, an API needs contracts and error codes, a mobile app needs screens and offline states. For the level of detail expected, read [a complete spec](examples/0001_spec_dark_mode.md): deliberately barebone — short sections, one rule per line, one number with its reason. Real specs usually say more.
 
 ```
 /spec template
@@ -90,7 +90,7 @@ copies the generic template to `specs/spec_template.md`. Rename its sections, re
 }
 ```
 
-`language` is the language specs are written in, whatever the language of the conversation.
+`language` is the language specs are written in, whatever the language of the conversation. Anything but a non-empty string is ignored with a warning and `"English"` is used.
 
 `verifyCount` is how many specs `/spec verify` checks per run.
 

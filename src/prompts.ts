@@ -57,6 +57,7 @@ Act:
 - Code genuinely broken (missing, crashing, contradicting its own rules): report it, do not touch the spec.
 - A rule itself must change (new or dropped behaviour, different design): ask the user first with spec_question.
 - Undecidable: report it.
+Status only moves forward: Agreed whose rules all run → Implemented. Never set Agreed or Draft: a spec fixed to match the code keeps its status.
 Never invent, delete or renumber a rule; never rewrite a section for style.
 
 Stamp: only on a spec fully checked, set \`| Last verified | ${today} |\`. Bump Version only when the content changed.

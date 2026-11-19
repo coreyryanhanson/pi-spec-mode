@@ -1,6 +1,6 @@
 // Drives the extension through a fake pi: no TUI, but every hook and command runs for real.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { test } from "node:test";
@@ -18,6 +18,7 @@ function harness(opts: { plan?: boolean; picks?: string[] } = {}) {
   const sent: { user: string[]; custom: any[] } = { user: [], custom: [] };
   const notes: string[] = [];
   const picks = [...(opts.picks ?? [])];
+  const offered: string[][] = []; // options each select showed, to check what the picker filters out
   let status: string | undefined;
 
   const pi: any = {
@@ -39,7 +40,7 @@ function harness(opts: { plan?: boolean; picks?: string[] } = {}) {
     ui: {
       notify: (m: string) => notes.push(m),
       setStatus: (_k: string, t?: string) => (status = t),
-      select: async () => picks.shift(),
+      select: async (_m: string, options: string[]) => (offered.push(options), picks.shift()),
       input: async () => picks.shift(),
       theme: { fg: (_c: string, t: string) => t },
     },
@@ -55,11 +56,11 @@ function harness(opts: { plan?: boolean; picks?: string[] } = {}) {
     await fire("before_agent_start", { systemPromptOptions: { sections } });
     return sections["spec-mode"];
   };
-  return { cwd, ctx, fire, prompt, commands, tools, bus, sent, notes, status: () => status, entries };
+  return { cwd, ctx, fire, prompt, commands, tools, bus, sent, notes, offered, status: () => status, entries };
 }
 
 const TEMPLATE = readFileSync(new URL("../templates/spec_template.md", import.meta.url), "utf8");
-const FILLED = readFileSync(new URL("./fixtures/filled_spec.md", import.meta.url), "utf8");
+const FILLED = readFileSync(new URL("../examples/0001_spec_dark_mode.md", import.meta.url), "utf8");
 
 test("/spec <request> enters spec mode, contract and status follow", async () => {
   const h = harness();
@@ -270,7 +271,7 @@ test("implement: needs plan mode, an Agreed spec, then dispatches /plan", async 
 });
 
 test("/spec menu runs the same commands as typing them", async () => {
-  const h = harness({ plan: true, picks: ["Implement a spec", "1", "Start spec mode", "Leave spec mode"] });
+  const h = harness({ plan: true, picks: ["Implement a spec", "0001 · Agreed · x", "Start spec mode", "Leave spec mode"] });
   await h.fire("session_start");
   mkdirSync(join(h.cwd, "specs"));
   writeFileSync(join(h.cwd, "specs/0001_spec_x.md"), "| Status | Agreed |\n");
@@ -324,6 +325,48 @@ test("commands refuse what the current state does not allow", async () => {
   assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["list", "refuse", "exit", "template", "settings"]);
 });
 
+test("/spec menu picks a spec from a list instead of typing a number", async () => {
+  const setup = async (opts: { plan?: boolean; picks?: string[] }) => {
+    const h = harness(opts);
+    await h.fire("session_start");
+    mkdirSync(join(h.cwd, "specs/Implemented"), { recursive: true });
+    mkdirSync(join(h.cwd, "specs/Refused"), { recursive: true });
+    writeFileSync(join(h.cwd, "specs/0001_spec_login.md"), "| Status | Agreed |\n");
+    writeFileSync(join(h.cwd, "specs/0002_spec_draft.md"), "| Status | Draft |\n");
+    writeFileSync(join(h.cwd, "specs/Implemented/0003_spec_done.md"), "| Status | Implemented |\n");
+    writeFileSync(join(h.cwd, "specs/Refused/0004_spec_old.md"), "| Status | Refused |\n");
+    return h;
+  };
+
+  // Implement offers only the Agreed one and dispatches to plan mode with its number.
+  const impl = await setup({ plan: true, picks: ["Implement a spec", "0001 · Agreed · login"] });
+  await impl.commands.spec.handler("", impl.ctx);
+  assert.deepEqual(impl.offered[1], ["0001 · Agreed · login"]);
+  assert.match(impl.sent.user[0], /^\/plan Implement the agreed spec `specs\/0001_spec_login\.md`/);
+
+  // Refuse offers what it can move: the specs folder, not Implemented/ nor Refused/.
+  const refuse = await setup({ picks: ["Refuse a spec", "0002 · Draft · draft"] });
+  await refuse.commands.spec.handler("", refuse.ctx);
+  assert.deepEqual(refuse.offered[1], ["0001 · Agreed · login", "0002 · Draft · draft"]);
+  assert.ok(existsSync(join(refuse.cwd, "specs/Refused/0002_spec_draft.md")));
+
+  // Restore offers only Refused/ and brings the spec back as Draft.
+  const restore = await setup({ picks: ["Restore a refused spec", "0004 · Refused · old"] });
+  await restore.commands.spec.handler("", restore.ctx);
+  assert.deepEqual(restore.offered[1], ["0004 · Refused · old"]);
+  assert.match(readFileSync(join(restore.cwd, "specs/0004_spec_old.md"), "utf8"), /\| Status \| Draft \|/);
+
+  // Nothing eligible: a message naming the command, no picker, no dispatch.
+  const empty = harness({ plan: true, picks: ["Implement a spec"] });
+  await empty.fire("session_start");
+  mkdirSync(join(empty.cwd, "specs"));
+  writeFileSync(join(empty.cwd, "specs/0001_spec_draft.md"), "| Status | Draft |\n");
+  await empty.commands.spec.handler("", empty.ctx);
+  assert.match(empty.notes.at(-1)!, /No Agreed spec to implement/);
+  assert.equal(empty.offered.length, 1); // the menu only
+  assert.deepEqual(empty.sent.user, []);
+});
+
 test("/spec settings says which files exist and reloads a project file created later", async () => {
   const h = harness();
   h.ctx.isProjectTrusted = () => true;
@@ -335,6 +378,17 @@ test("/spec settings says which files exist and reloads a project file created l
   await h.commands.spec.handler("settings", h.ctx);
   assert.match(h.notes.at(-1)!, /\(found\)/);
   assert.match(h.notes.at(-1)!, /"specsDir": "doc\/specs"/);
+});
+
+test("a non-string language setting falls back to English instead of reaching the contract", async () => {
+  const h = harness();
+  h.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(h.cwd, ".pi"), { recursive: true });
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "language": 3 }');
+  await h.fire("session_start");
+  assert.match(h.notes.at(-1)!, /language must be a non-empty string/);
+  await h.commands.spec.handler("start", h.ctx);
+  assert.match(await h.prompt(), /Write the spec in English/);
 });
 
 test("agent setting an Agreed spec to Refused moves it instead of resetting it to Draft", async () => {
@@ -417,6 +471,10 @@ test("verify run: stamping an Agreed spec keeps it Agreed, changing it or self-a
   assert.match(changed, /A rule nobody agreed\./);
   // Draft → Agreed by the agent: back to Draft.
   assert.match(await edit(b, "v4", AGREED), /\| Status \| Draft \|/);
+  // Implemented → Agreed by the agent (spec updated to match the code): stays Implemented.
+  const IMPL = FILLED.replace("| Status | Draft |", "| Status | Implemented |");
+  writeFileSync(a, IMPL);
+  assert.match(await edit(a, "v5", `${AGREED}\nRule fixed to match the code.\n`), /\| Status \| Implemented \|/);
 });
 
 test("a project whose own path has a folder starting with - can still write specs", async () => {

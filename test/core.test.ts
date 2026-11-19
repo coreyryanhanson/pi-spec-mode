@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber,
-  refuseSpec, resolveSpec, restoreSpec, setField, specSummary, specTable, sweepRefused, verifyQueue,
+  refuseSpec, resolveSpec, restoreSpec, setField, specChoices, specSummary, specTable, sweepRefused, verifyQueue,
 } from "../src/core.ts";
 
 const template = readFileSync(new URL("../templates/spec_template.md", import.meta.url), "utf8");
@@ -41,7 +41,7 @@ test("header fields read and write", () => {
 
 test("agree check: the raw template fails, a filled spec passes", () => {
   assert.ok(leftovers(template, template).length > 0);
-  const own = readFileSync(new URL("./fixtures/filled_spec.md", import.meta.url), "utf8");
+  const own = readFileSync(new URL("../examples/0001_spec_dark_mode.md", import.meta.url), "utf8");
   assert.deepEqual(leftovers(own, template), []);
   assert.deepEqual(missingSections(own, template), []);
   assert.deepEqual(emptySections(own), []);
@@ -117,6 +117,20 @@ test("specTable lists every spec with status and verification age, Refused/ incl
   assert.match(rows[0], /^0001 +Refused +verified 2026-11-06 \(10 d ago\) +login$/);
   assert.match(rows[1], /^0002 +Implemented +never verified +offline$/);
   assert.deepEqual(specTable(specsDir({}), "2026-11-16"), []);
+});
+
+test("specChoices: one picker entry per spec, Refused/ included, number as argument", () => {
+  const dir = specsDir({ "0001_spec_login.md": spec("Agreed", ""), "Implemented/0002_spec_offline.md": spec("Implemented", "") });
+  refuseSpec(dir, join(dir, "0001_spec_login.md"), "2026-11-12");
+  writeFileSync(join(dir, "Refused/0003_spec_old.md"), spec("Refused", ""));
+  writeFileSync(join(dir, "0004_spec_todo.md"), "# no header\n");
+  assert.deepEqual(specChoices(dir), [
+    { num: "0001", status: "Refused", folder: "Refused", label: "0001 · Refused · login", arg: "0001" },
+    { num: "0002", status: "Implemented", folder: "Implemented", label: "0002 · Implemented · offline", arg: "0002" },
+    { num: "0003", status: "Refused", folder: "Refused", label: "0003 · Refused · old", arg: "0003" },
+    { num: "0004", status: "?", folder: "", label: "0004 · ? · todo", arg: "0004" },
+  ]);
+  assert.deepEqual(specChoices(specsDir({})), []);
 });
 
 test("specSummary: H1 title and the first line of Goal, capped", () => {
