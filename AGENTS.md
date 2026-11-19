@@ -26,7 +26,9 @@ npm test            # node --test test/*.test.ts
 ```
 
 - If `tsc` cannot even start (a `node_modules/` installed on another machine or platform, e.g. `Unable to resolve @typescript/typescript-<platform>`), do not reinstall or edit `node_modules/`: run the same check from a throwaway install of the TypeScript major `package.json` uses (`npm i --prefix /tmp/tsc typescript@7`, then `/tmp/tsc/node_modules/.bin/tsc --noEmit -p tsconfig.json`), and say in your report that the project's own script could not run and which version you used.
-- A bug fix comes with a test that fails before and passes after. New behaviour in `core.ts` (a branch, a parser, a filter, a path rule) leaves a test in `test/core.test.ts`. Extension/flow changes go in `test/extension.test.ts`.
+- **Every feature comes with unit tests**, in the same commit: no feature is "done" without them. New behaviour in `core.ts` (a branch, a parser, a filter, a path rule) leaves a test in `test/core.test.ts`. Extension/flow changes go in `test/extension.test.ts`.
+- A bug fix comes with a test that fails before and passes after.
+- A test asserts behaviour, not implementation: one case per rule or edge case the feature adds (empty input, refused path, unchanged status...), named after the behaviour.
 - No test for a typo or a doc line. Don't lower the bar to make a test pass.
 
 ## Code
