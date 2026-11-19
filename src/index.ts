@@ -7,7 +7,7 @@ import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, listSpecs, missingSections,
   nextSpecNumber, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, specChoices, type SpecChoice, specSummary, specTable, sweepRefused, today, verifyQueue,
 } from "./core.ts";
-import { implementRequest, NORMAL_CONTRACT, specContract, verifyContract } from "./prompts.ts";
+import { implementRequest, NORMAL_CONTRACT, specContract, templateRequest, verifyContract } from "./prompts.ts";
 
 type Mode = "off" | "spec" | "verify";
 interface State {
@@ -48,6 +48,7 @@ export default function specMode(pi: ExtensionAPI) {
   let settings = DEFAULT_SETTINGS;
   let session: object | undefined;
   let completeRequested = false;
+  let templateRun = false; // the agent may rewrite specs/spec_template.md during an explicit `/spec template` run
   const beforeEdit = new Map<string, string>(); // toolCallId of a write/edit in the specs folder → the file's content before it ("" for a new file)
 
   const specsAbs = (ctx: ExtensionContext) => resolve(ctx.cwd, settings.specsDir);
@@ -89,12 +90,26 @@ export default function specMode(pi: ExtensionAPI) {
     return readFileSync(existsSync(localTemplate(ctx)) ? localTemplate(ctx) : BUNDLED_TEMPLATE, "utf8");
   }
 
-  function createTemplate(ctx: ExtensionContext) {
+  /** Creates the project template: the agent adapts it to the project, or a plain copy when the user prefers. */
+  async function createTemplate(ctx: ExtensionContext) {
     const dest = localTemplate(ctx);
-    if (existsSync(dest)) return notify(ctx, `${rel(ctx, dest)} already exists: edit it to fit your project.`, "warning");
+    if (existsSync(dest)) return notify(ctx, `${rel(ctx, dest)} already exists: edit it, or ask the agent to adapt it.`, "warning");
+    let adapt = false; // no interactive UI: nothing to ask, the copy is all that can be done
+    if (ctx.hasUI) {
+      const path = rel(ctx, dest);
+      adapt = await ctx.ui.confirm(
+        "Create the project template?",
+        `${path} is created from the generic template, then the agent reads the project (type, stack, domain) and rewrites it for this project. Reread the result: /spec agree checks every spec against it.`,
+      );
+      if (!adapt && !(await ctx.ui.confirm("Copy the generic template anyway?", `${path} is created from the generic template, unchanged: you adapt it by hand.`)))
+        return notify(ctx, "Nothing created.");
+    }
     mkdirSync(specsAbs(ctx), { recursive: true });
     writeFileSync(dest, readFileSync(BUNDLED_TEMPLATE, "utf8"));
-    notify(ctx, `Created ${rel(ctx, dest)} — adapt its sections and hints to your project; spec mode now uses it.`);
+    if (!adapt) return notify(ctx, `Copied the generic template to ${rel(ctx, dest)}: adapt it by hand, /spec agree checks every spec against it.`);
+    templateRun = true;
+    pi.sendUserMessage(templateRequest(rel(ctx, dest), settings.specsDir));
+    notify(ctx, `Created ${rel(ctx, dest)}: the agent adapts it to the project now — reread it carefully, /spec agree checks every spec against it.`);
   }
 
   function specStatus(ctx: ExtensionContext, p: string): string | undefined {
@@ -380,7 +395,7 @@ export default function specMode(pi: ExtensionAPI) {
           return notify(ctx, rows.length ? [`Specs in ${settings.specsDir}/:`, ...rows].join("\n") : `No spec in ${settings.specsDir}/ yet.`);
         }
         case "template":
-          return createTemplate(ctx);
+          return idle ? createTemplate(ctx) : busy();
         case "settings":
           return showSettings(ctx);
         default: {
@@ -446,8 +461,9 @@ export default function specMode(pi: ExtensionAPI) {
       if (relative(specsAbs(ctx), abs).split(/[\\/]/).some((s) => s.startsWith("-")))
         return { block: true, reason: `Spec mode: file and folder names cannot start with "-".` };
       // /spec agree checks a spec against the template: the agent must not be able to weaken it. Lower-cased: macOS and Windows ignore case.
-      if (abs.toLowerCase() === localTemplate(ctx).toLowerCase())
-        return { block: true, reason: `Spec mode: ${rel(ctx, abs)} is the user's template and cannot be changed in spec mode. Ask the user to edit it.` };
+      // The one exception is the run `/spec template` starts, which exists to rewrite it.
+      if (abs.toLowerCase() === localTemplate(ctx).toLowerCase() && !templateRun)
+        return { block: true, reason: `Spec mode: ${rel(ctx, abs)} is the user's template and cannot be changed in spec mode. Run /spec template to have it adapted, or edit it yourself.` };
       // pi rewrites `@x`, `~/x`, `file://…` and (on Windows) `/c/x` before writing: give it the absolute path that was just checked.
       event.input.path = abs;
       beforeEdit.set(event.toolCallId, existsSync(abs) ? readFileSync(abs, "utf8") : "");
@@ -538,6 +554,10 @@ export default function specMode(pi: ExtensionAPI) {
   });
 
   pi.on("agent_settled", async (_e, ctx) => {
+    if (templateRun) {
+      templateRun = false;
+      notify(ctx, `Reread ${rel(ctx, localTemplate(ctx))} before writing a spec: the agent adapted it, and /spec agree checks every spec against it.`, "warning");
+    }
     if (state.mode === "verify") {
       const drafts = state.drafts ?? [];
       save(ctx, { mode: state.before ?? "off", spec: state.spec }); // a fresh object: the run's drafts do not outlive it

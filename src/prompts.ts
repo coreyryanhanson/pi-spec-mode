@@ -65,6 +65,17 @@ Stamp: only on a spec fully checked, set \`| Last verified | ${today} |\`. Bump 
 Report, one short block per spec, nothing else: path, status before → after, each edit with its section, each unverified claim or code problem with one line of why.`;
 }
 
+/** Sent by `/spec template`: the agent adapts the copied generic template to the project. */
+export function templateRequest(templatePath: string, specsDir: string): string {
+  return `Create the project spec template \`${templatePath}\`. It holds a copy of the generic template: read it, then rewrite it for this project.
+
+1. Quick analysis first, a few reads only: what the project does, its stack, its domain, its main user-facing surfaces — README, manifest (package.json, pyproject.toml, Cargo.toml…), top-level folders, and the specs already in \`${specsDir}/\`. Reading the code is not needed.
+2. Rewrite \`${templatePath}\` for this project: keep the header rows (Status, Owner, Version, Creation date, Implementation date, Last verified), a section named \`Goal\` and the numbered rules; rename the other sections and rewrite their hints in the project's own domain (a game: feel and balance numbers; an API: contracts, error codes, pagination; a mobile app: screens, offline states). Delete what never applies and add what this project always needs. A spec says what the feature does, never how the code works.
+3. Then tell the user what you changed and why, and that they must reread the whole template before the first spec: \`/spec agree\` checks every spec against it, so a wrong rule there makes every spec wrong.
+
+Write no file but \`${templatePath}\`.`;
+}
+
 export function implementRequest(specPath: string, specsDir: string): string {
   return `Implement the agreed spec \`${specPath}\`. Read it and the code its rules land on, then plan the implementation; the plan is the spec implemented, do not restate or rewrite the spec. The plan must end by moving the spec to \`${specsDir}/Implemented/\` and setting in its header \`| Status | Implemented |\`, \`| Implementation date | <day of implementation> |\` and \`| Last verified | <same day> |\`; Creation date is never touched.`;
 }

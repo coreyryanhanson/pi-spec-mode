@@ -32,7 +32,7 @@ pi -e ./                           # try a local checkout
 | `/spec verify` | Check the `verifyCount` specs verified longest ago against the code |
 | `/spec verify <spec>` | Check one spec against the code, even if already verified today |
 | `/spec implement <spec>` | Hand an `Agreed` spec to plan mode |
-| `/spec template` | Copy the generic template to `specs/spec_template.md` to adapt it |
+| `/spec template` | Create `specs/spec_template.md`, adapted to the project by the agent (asks first) |
 | `/spec exit` | Leave spec mode |
 | `/spec settings` | Show the effective settings |
 
@@ -77,7 +77,9 @@ The [bundled template](templates/spec_template.md) is deliberately generic. Spec
 /spec template
 ```
 
-copies the generic template to `specs/spec_template.md`. Rename its sections, rewrite the italic hints for your domain, delete what never applies. Spec mode uses the project's template whenever it exists, and warns you each time it falls back to the generic one. Agreeing a spec checks it against the template's own sections, so any section layout works; a section left empty is refused (write "None"). The agent cannot change the template in spec mode or during `/spec verify`: edit it yourself, or ask the agent outside spec mode.
+asks first, because it starts a decision you own: the generic template is copied to `specs/spec_template.md` as the starting point, then the agent quickly looks at the project (type, stack, domain, existing specs) and rewrites the file for it. Answer `No` and you are offered the plain copy instead.
+
+**Reread the result.** `/spec agree` checks every spec against this template, so a rule that is wrong here makes every spec wrong: the agent tells you what it changed, and so does spec mode when the run ends. Rename sections, rewrite the hints for your domain, delete what never applies. Spec mode uses the project's template whenever it exists, and warns you each time it falls back to the generic one. Agreeing a spec checks it against the template's own sections, so any section layout works; a section left empty is refused (write "None"). The agent can only change the template during that `/spec template` run: otherwise it is yours, edit it yourself or ask the agent outside spec mode.
 
 ## Settings
 

@@ -7,6 +7,10 @@
 - `/spec verify` ends by asking whether to agree again each spec it changed: an `Agreed` spec that had to be fixed goes back to `Draft`, and you get one question per spec that changed that way (`Agree again` / `Keep Draft`). A spec only stamped `Last verified` stays `Agreed` and is not offered, and so is a spec that was already `Draft`.
 - `/spec agree <spec>` agrees an existing `Draft` spec (`/spec agree 0003`) with the same template checks as `/spec agree`: answering `Keep Draft` after a verify run is not final, and you no longer have to edit the `Status` row by hand. `Implemented` and `Refused` specs are refused.
 
+### Changed
+
+- `/spec template` no longer just copies the generic template: it warns you first, then the agent quickly analyses the project (type, stack, domain) and rewrites `specs/spec_template.md` for it, and asks you to reread the result — `/spec agree` checks every spec against that file. Answer `No` and you are offered the plain copy instead. The agent may change the template only during this run.
+
 ## 0.0.2
 
 ### Added

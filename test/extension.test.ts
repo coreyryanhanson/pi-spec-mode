@@ -8,7 +8,7 @@ import specMode from "../src/index.ts";
 
 type Handler = (event: any, ctx: any) => any;
 
-function harness(opts: { plan?: boolean; picks?: string[] } = {}) {
+function harness(opts: { plan?: boolean; picks?: string[]; confirms?: boolean[] } = {}) {
   const cwd = mkdtempSync(join(tmpdir(), "proj-"));
   const handlers: Record<string, Handler[]> = {};
   const commands: Record<string, any> = {};
@@ -19,6 +19,8 @@ function harness(opts: { plan?: boolean; picks?: string[] } = {}) {
   const notes: string[] = [];
   const picks = [...(opts.picks ?? [])];
   const offered: string[][] = []; // options each select showed, to check what the picker filters out
+  const asked: { title: string; message: string }[] = []; // confirmation dialogs, in order
+  const answers = [...(opts.confirms ?? [])];
   let status: string | undefined;
 
   const pi: any = {
@@ -42,6 +44,7 @@ function harness(opts: { plan?: boolean; picks?: string[] } = {}) {
       setStatus: (_k: string, t?: string) => (status = t),
       select: async (_m: string, options: string[]) => (offered.push(options), picks.shift()),
       input: async () => picks.shift(),
+      confirm: async (title: string, message: string) => (asked.push({ title, message }), answers.length ? answers.shift()! : true),
       theme: { fg: (_c: string, t: string) => t },
     },
   };
@@ -56,7 +59,7 @@ function harness(opts: { plan?: boolean; picks?: string[] } = {}) {
     await fire("before_agent_start", { systemPromptOptions: { sections } });
     return sections["spec-mode"];
   };
-  return { cwd, ctx, fire, prompt, commands, tools, bus, sent, notes, offered, status: () => status, entries };
+  return { cwd, ctx, fire, prompt, commands, tools, bus, sent, notes, offered, asked, status: () => status, entries };
 }
 
 const TEMPLATE = readFileSync(new URL("../templates/spec_template.md", import.meta.url), "utf8");
@@ -433,7 +436,7 @@ test("state survives a reload", async () => {
   assert.equal(h.status(), "spec-mode");
 });
 
-test("/spec template creates the project template once; spec mode warns until it exists", async () => {
+test("/spec template creates the project template once, then asks the agent to adapt it", async () => {
   const h = harness();
   await h.fire("session_start");
   await h.commands.spec.handler("start", h.ctx);
@@ -441,14 +444,70 @@ test("/spec template creates the project template once; spec mode warns until it
   await h.commands.spec.handler("exit", h.ctx);
   await h.commands.spec.handler("template", h.ctx);
   const dest = join(h.cwd, "specs/spec_template.md");
-  assert.equal(readFileSync(dest, "utf8"), TEMPLATE);
+  assert.equal(readFileSync(dest, "utf8"), TEMPLATE); // the copy exists before the run
+  assert.equal(h.sent.user.length, 1);
+  assert.match(h.sent.user[0], /specs\/spec_template\.md/);
+  assert.match(h.sent.user[0], /reread/);
+  assert.match(h.notes.at(-1)!, /reread/);
   writeFileSync(dest, "## Mine\n");
   await h.commands.spec.handler("template", h.ctx);
   assert.match(h.notes.at(-1)!, /already exists/);
+  assert.equal(h.sent.user.length, 1); // no second run
+  assert.equal(h.asked.length, 1); // an existing template is not even offered
   assert.equal(readFileSync(dest, "utf8"), "## Mine\n");
   await h.commands.spec.handler("start", h.ctx);
   assert.doesNotMatch(h.notes.at(-1)!, /generic/);
   assert.match(await h.prompt(), /## Mine/);
+});
+
+test("/spec template asks before adapting, and writes nothing when both answers are no", async () => {
+  const h = harness({ confirms: [false, false] });
+  await h.fire("session_start");
+  await h.commands.spec.handler("template", h.ctx);
+  assert.equal(existsSync(join(h.cwd, "specs")), false);
+  assert.deepEqual(h.sent.user, []);
+  assert.match(h.asked[0].message, /agent reads the project/);
+  assert.match(h.asked[1].title, /Copy the generic template/);
+  assert.match(h.notes.at(-1)!, /Nothing created/);
+});
+
+test("/spec template copies the generic template when the adaptation is declined", async () => {
+  const h = harness({ confirms: [false, true] });
+  await h.fire("session_start");
+  await h.commands.spec.handler("template", h.ctx);
+  assert.equal(readFileSync(join(h.cwd, "specs/spec_template.md"), "utf8"), TEMPLATE);
+  assert.deepEqual(h.sent.user, []); // a plain copy starts no agent run
+  assert.match(h.notes.at(-1)!, /by hand/);
+});
+
+test("the agent may rewrite the template during the /spec template run only", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  await h.commands.spec.handler("start", h.ctx);
+  const call = (id: string) => h.fire("tool_call", { toolName: "write", toolCallId: id, input: { path: "specs/spec_template.md", content: "x" } });
+  assert.equal((await call("t0"))?.block, true);
+  await h.commands.spec.handler("template", h.ctx);
+  assert.equal(await call("t1"), undefined);
+  await h.fire("agent_settled");
+  assert.match(h.notes.at(-1)!, /Reread specs\/spec_template\.md/);
+  assert.equal((await call("t2"))?.block, true);
+});
+
+test("/spec template refuses while the agent runs, and copies without asking without UI", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  h.ctx.isIdle = () => false;
+  await h.commands.spec.handler("template", h.ctx);
+  assert.match(h.notes.at(-1)!, /wait or interrupt/);
+  assert.equal(existsSync(join(h.cwd, "specs")), false);
+
+  const headless = harness();
+  await headless.fire("session_start");
+  headless.ctx.hasUI = false;
+  await headless.commands.spec.handler("template", headless.ctx);
+  assert.equal(readFileSync(join(headless.cwd, "specs/spec_template.md"), "utf8"), TEMPLATE);
+  assert.deepEqual(headless.sent.user, []);
+  assert.equal(headless.asked.length, 0);
 });
 
 test("commands refuse what the current state does not allow", async () => {
