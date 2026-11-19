@@ -26,7 +26,7 @@ pi -e ./                           # try a local checkout
 | `/spec start` | Enter spec mode, send nothing |
 | `/spec <request>` | Enter spec mode and send the request |
 | `/spec list` | Every spec, refused ones included: number, `Status`, `Last verified` and how many days ago |
-| `/spec agree` | Set the spec shown in the footer to `Agreed` and leave spec mode |
+| `/spec agree [spec]` | Set the spec shown in the footer to `Agreed` and leave spec mode; with a spec name, agree that `Draft` spec (`/spec agree 0003`), whatever the mode |
 | `/spec refuse [spec]` | Set a spec (default: the one in the footer) to `Refused` and move it to `specs/Refused/`: kept, but ignored by `/spec verify` and the agent |
 | `/spec restore <spec>` | Move a refused spec back to `specs/` as `Draft` |
 | `/spec verify` | Check the `verifyCount` specs verified longest ago against the code |
@@ -51,7 +51,7 @@ flowchart LR
     Refused["<b>Refused</b><br/>specs/Refused/<br/>skipped by /spec verify"] -->|/spec restore| Draft
 ```
 
-`/spec verify` runs over every spec outside `Refused/`, oldest check first, and fixes a spec that drifted from the code.
+`/spec verify` runs over every spec outside `Refused/`, oldest check first, and fixes a spec that drifted from the code. An `Agreed` spec it had to edit goes back to `Draft`, and the run ends by asking you, once per spec changed that way, whether to agree it again (`Agree again` / `Keep Draft`); a spec only stamped `Last verified` stays `Agreed` and is not offered, and so is a spec that was already `Draft`. Answering `Keep Draft` is not final: `/spec agree <spec>` agrees it later.
 
 ```mermaid
 flowchart LR
@@ -66,6 +66,7 @@ flowchart LR
     Ask --> Stamp
     Check -->|all claims hold| Stamp["Last verified = today"]
     Stamp --> Report["<b>Report</b><br/>then back to the previous mode"]
+    Draft --> Offer["<b>Agree again?</b><br/>one question per changed spec"]
 ```
 
 ## Make your own template (do it)

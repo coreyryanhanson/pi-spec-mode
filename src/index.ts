@@ -15,6 +15,7 @@ interface State {
   spec?: string; // project-relative path of the spec being written
   before?: "off" | "spec"; // mode to return to after a verify run
   targets?: string[];
+  drafts?: string[]; // specs this verify run put back to Draft: offered for a new agreement when it ends
 }
 interface Settings {
   specsDir: string;
@@ -27,7 +28,7 @@ const SECTION = "spec-mode";
 const MUTEX = "workflow:mutex:v1"; // shared with @narumitw/pi-plan-mode: only one agent workflow at a time
 const READ_TOOLS = new Set(["read", "grep", "find", "ls", "spec_question", "spec_complete"]);
 const BUNDLED_TEMPLATE = fileURLToPath(new URL("../templates/spec_template.md", import.meta.url));
-const USAGE = "/spec start | <request> | list | agree | refuse [spec] | restore <spec> | verify [spec] | implement <spec> | template | exit | settings";
+const USAGE = "/spec start | <request> | list | agree [spec] | refuse [spec] | restore <spec> | verify [spec] | implement <spec> | template | exit | settings";
 /** `/spec` menu label → the subcommand it runs, and whether it first asks which spec. */
 const MENU: Record<string, [string, boolean]> = {
   "Start spec mode": ["start", false], "List specs": ["list", false], "Verify specs": ["verify", false], "Implement a spec": ["implement", true],
@@ -176,18 +177,48 @@ export default function specMode(pi: ExtensionAPI) {
     notify(ctx, message ?? "Spec mode off");
   }
 
-  /** Agrees the spec shown in the footer: only in spec mode, once a spec file is written. */
-  function agree(ctx: ExtensionContext) {
-    if (state.mode !== "spec") return notify(ctx, "Spec mode is not on: /spec agree works on the spec being written.", "warning");
-    const p = state.spec && resolve(ctx.cwd, state.spec);
-    if (!p || !existsSync(p)) return notify(ctx, "No spec written yet in this spec mode session.", "warning");
+  /** Checks a spec against the template and sets it to Agreed: returns the problems found, and writes nothing when there are any. */
+  function agreeFile(ctx: ExtensionContext, p: string): string[] {
     const md = readFileSync(p, "utf8");
     const tpl = template(ctx);
     const problems = [...missingSections(md, tpl).map((h) => `missing section "${h}"`), ...emptySections(md).map((h) => `empty section "${h}": write "None" if nothing applies`), ...leftovers(md, tpl)];
     if (getField(md, "Status") === undefined) problems.push(`missing header row "Status"`); // setField would silently do nothing
+    if (!problems.length) writeFileSync(p, setField(md, "Status", "Agreed"));
+    return problems;
+  }
+
+  /** Agrees the spec shown in the footer, or the one named: `/spec agree 0003` re-agrees a Draft spec later. */
+  function agree(ctx: ExtensionContext, arg = "") {
+    if (state.mode === "verify") return notify(ctx, "A spec verify run is in progress: agree when it ends.", "warning");
+    let p: string | undefined;
+    if (arg.trim()) {
+      p = resolveSpec(specsAbs(ctx), arg);
+      if (!p) return notify(ctx, `No spec "${arg}" in ${settings.specsDir}/ or ${settings.specsDir}/Implemented/`, "warning");
+      if (basename(dirname(p)) === "Implemented") return notify(ctx, `${rel(ctx, p)} is already implemented.`, "warning");
+    } else {
+      if (state.mode !== "spec") return notify(ctx, "Spec mode is not on: /spec agree works on the spec being written, /spec agree <spec> on an existing Draft one.", "warning");
+      p = state.spec && resolve(ctx.cwd, state.spec);
+      if (!p || !existsSync(p)) return notify(ctx, "No spec written yet in this spec mode session.", "warning");
+    }
+    const problems = agreeFile(ctx, p);
     if (problems.length) return notify(ctx, `Cannot agree ${rel(ctx, p)}:\n- ${problems.join("\n- ")}`, "error");
-    writeFileSync(p, setField(md, "Status", "Agreed"));
-    exit(ctx, `${basename(p).slice(0, 4)} agreed`);
+    const done = `${basename(p).slice(0, 4)} agreed`;
+    if (state.mode === "spec") exit(ctx, done);
+    else notify(ctx, done);
+  }
+
+  /** Ends a verify run: each spec it sent back to Draft is offered for a fresh agreement, one question per spec. */
+  async function reagreeAll(ctx: ExtensionContext, drafts: string[]) {
+    const still = drafts.filter((p) => existsSync(resolve(ctx.cwd, p)) && specStatus(ctx, p) === "Draft");
+    if (!still.length) return;
+    if (!ctx.hasUI) return notify(ctx, `Changed during verify, back to Draft: ${still.map((p) => basename(p).slice(0, 4)).join(", ")}. Agree again with /spec agree <number>.`, "warning");
+    for (const p of still) {
+      const pick = await ctx.ui.select(`${rel(ctx, p)} changed during verify, back to Draft — agree it again?`, ["Agree again", "Keep Draft"]);
+      if (pick !== "Agree again") continue;
+      const problems = agreeFile(ctx, resolve(ctx.cwd, p));
+      if (problems.length) notify(ctx, `Cannot agree ${rel(ctx, p)}:\n- ${problems.join("\n- ")}`, "error");
+      else notify(ctx, `${basename(p).slice(0, 4)} agreed again`);
+    }
   }
 
   /** Puts the session in a verify run; the caller sends the message that starts it. */
@@ -290,7 +321,7 @@ export default function specMode(pi: ExtensionAPI) {
     getArgumentCompletions: (prefix) => {
       // Offer only what the current state accepts.
       const valid =
-        state.mode === "off" ? ["start", "list", "verify", "implement", "refuse", "restore", "template", "settings"]
+        state.mode === "off" ? ["start", "list", "agree", "verify", "implement", "refuse", "restore", "template", "settings"]
         : state.mode === "spec" ? [...(state.spec ? ["agree"] : []), "list", "refuse", "exit", "template", "settings"]
         : ["list", "settings"];
       const items = valid.filter((s) => s.startsWith(prefix));
@@ -302,9 +333,9 @@ export default function specMode(pi: ExtensionAPI) {
       const idle = ctx.isIdle();
       const busy = () => notify(ctx, "The agent is running: wait or interrupt, then retry.", "warning");
       // `/spec verify that login works offline` is a request: commands without an argument only match alone.
-      // `/spec verify 0003` names a spec, so it is the command.
-      const verifiesSpec = sub === "verify" && rest !== "" && !!resolveSpec(specsAbs(ctx), rest);
-      const isRequest = rest !== "" && !verifiesSpec && ["start", "list", "exit", "off", "agree", "verify", "template", "settings"].includes(sub);
+      // `/spec verify 0003` and `/spec agree 0003` name a spec, so they are the command.
+      const namesSpec = ["verify", "agree"].includes(sub) && rest !== "" && !!resolveSpec(specsAbs(ctx), rest);
+      const isRequest = rest !== "" && !namesSpec && ["start", "list", "exit", "off", "agree", "verify", "template", "settings"].includes(sub);
 
       switch (isRequest ? undefined : sub) {
         case "": {
@@ -333,7 +364,7 @@ export default function specMode(pi: ExtensionAPI) {
         case "off":
           return idle ? exit(ctx) : busy();
         case "agree":
-          return idle ? agree(ctx) : busy();
+          return idle ? agree(ctx, rest) : busy();
         case "verify":
           if (!idle) return busy();
           if (startVerify(ctx, rest)) pi.sendUserMessage("Verify the specs.");
@@ -450,6 +481,8 @@ export default function specMode(pi: ExtensionAPI) {
       // From the Version before the edit: an edit that already bumped it is not bumped twice.
       if (wasAgreed) md = setField(md, "Version", String((Number(getField(before, "Version")) || 1) + 1));
       writeFileSync(abs, md);
+      // Only a real change retires an Agreed spec; a run that just stamps `Last verified` keeps it Agreed and is not offered.
+      if (changed && state.mode === "verify") save(ctx, { ...state, drafts: [...new Set([...(state.drafts ?? []), p])] });
       notify(ctx, selfAgreed ? `${basename(p).slice(0, 4)}: only /spec agree can set a spec to Agreed, back to ${getField(md, "Status")}` : `${basename(p).slice(0, 4)} changed: back to Draft, agree it again when ready`);
     }
     if (state.mode === "spec" && state.spec !== p) save(ctx, { ...state, spec: p });
@@ -506,7 +539,9 @@ export default function specMode(pi: ExtensionAPI) {
 
   pi.on("agent_settled", async (_e, ctx) => {
     if (state.mode === "verify") {
-      save(ctx, { mode: state.before ?? "off", spec: state.spec });
+      const drafts = state.drafts ?? [];
+      save(ctx, { mode: state.before ?? "off", spec: state.spec }); // a fresh object: the run's drafts do not outlive it
+      await reagreeAll(ctx, drafts);
       return;
     }
     if (!completeRequested || state.mode !== "spec" || !state.spec) return;

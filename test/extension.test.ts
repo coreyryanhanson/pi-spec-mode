@@ -61,6 +61,15 @@ function harness(opts: { plan?: boolean; picks?: string[] } = {}) {
 
 const TEMPLATE = readFileSync(new URL("../templates/spec_template.md", import.meta.url), "utf8");
 const FILLED = readFileSync(new URL("../examples/0001_spec_dark_mode.md", import.meta.url), "utf8");
+const AGREED = FILLED.replace("| Status | Draft |", "| Status | Agreed |");
+
+/** A verify run that edits one Agreed spec: the file is on disk before and after the agent's edit. */
+async function verifyEdit(h: any, path: string, edited: string, id = "e1") {
+  const input = { path };
+  await h.fire("tool_call", { toolName: "edit", toolCallId: id, input });
+  writeFileSync(join(h.cwd, path), edited);
+  await h.fire("tool_result", { toolName: "edit", toolCallId: id, input, isError: false });
+}
 
 test("/spec <request> enters spec mode, contract and status follow", async () => {
   const h = harness();
@@ -244,6 +253,139 @@ test("/spec verify <spec> checks only that spec, even if verified today", async 
   assert.equal(h.status(), "spec-mode");
 });
 
+test("verify that drops an Agreed spec to Draft offers to agree it again at the end of the run", async () => {
+  const h = harness({ picks: ["Agree again"] });
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  const p = join(h.cwd, "specs/0001_spec_a.md");
+  writeFileSync(p, AGREED);
+  await h.commands.spec.handler("verify 1", h.ctx);
+  await verifyEdit(h, "specs/0001_spec_a.md", AGREED.replace("Dark mode", "Night mode"));
+  assert.match(readFileSync(p, "utf8"), /\| Status \| Draft \|/);
+  await h.fire("agent_settled", { aborted: false });
+  assert.deepEqual(h.offered.at(-1), ["Agree again", "Keep Draft"]);
+  assert.match(readFileSync(p, "utf8"), /\| Status \| Agreed \|/);
+  assert.match(h.notes.at(-1)!, /0001 agreed again/);
+  assert.equal(h.status(), undefined);
+});
+
+test("Keep Draft leaves the spec Draft", async () => {
+  const h = harness({ picks: ["Keep Draft"] });
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  const p = join(h.cwd, "specs/0001_spec_a.md");
+  writeFileSync(p, AGREED);
+  await h.commands.spec.handler("verify 1", h.ctx);
+  await verifyEdit(h, "specs/0001_spec_a.md", AGREED.replace("Dark mode", "Night mode"));
+  await h.fire("agent_settled", { aborted: false });
+  assert.match(readFileSync(p, "utf8"), /\| Status \| Draft \|/);
+});
+
+test("a spec only stamped Last verified stays Agreed and is not offered", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  const p = join(h.cwd, "specs/0001_spec_a.md");
+  writeFileSync(p, AGREED);
+  await h.commands.spec.handler("verify 1", h.ctx);
+  await verifyEdit(h, "specs/0001_spec_a.md", AGREED.replace("| Last verified | 2026-01-01 |", "| Last verified | 2026-12-24 |"));
+  await h.fire("agent_settled", { aborted: false });
+  assert.match(readFileSync(p, "utf8"), /\| Status \| Agreed \|/);
+  assert.equal(h.offered.length, 0);
+});
+
+test("a spec already Draft is not offered: only what verify retired is", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), FILLED);
+  await h.commands.spec.handler("verify 1", h.ctx);
+  await verifyEdit(h, "specs/0001_spec_a.md", FILLED.replace("Dark mode", "Night mode"));
+  await h.fire("agent_settled", { aborted: false });
+  assert.equal(h.offered.length, 0);
+  assert.match(readFileSync(join(h.cwd, "specs/0001_spec_a.md"), "utf8"), /\| Status \| Draft \|/);
+});
+
+test("the offer is refused when the spec no longer passes the template checks", async () => {
+  const h = harness({ picks: ["Agree again"] });
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  const p = join(h.cwd, "specs/0001_spec_a.md");
+  writeFileSync(p, AGREED);
+  await h.commands.spec.handler("verify 1", h.ctx);
+  // A section left empty: the same check as /spec agree keeps it Draft.
+  await verifyEdit(h, "specs/0001_spec_a.md", AGREED.replace(/(## 3\. Non-goals\n)[\s\S]*?(?=## 4)/, "$1\n"));
+  await h.fire("agent_settled", { aborted: false });
+  assert.match(h.notes.at(-1)!, /Cannot agree[\s\S]*empty section "## 3\. Non-goals"/);
+  assert.match(readFileSync(p, "utf8"), /\| Status \| Draft \|/);
+});
+
+test("no UI: specs retired by verify are reported instead of prompted", async () => {
+  const h = harness();
+  h.ctx.hasUI = false;
+  const errs: string[] = [];
+  const orig = console.error;
+  console.error = (...a: unknown[]) => errs.push(a.join(" "));
+  try {
+    await h.fire("session_start");
+    mkdirSync(join(h.cwd, "specs"));
+    writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), AGREED);
+    await h.commands.spec.handler("verify 1", h.ctx);
+    await verifyEdit(h, "specs/0001_spec_a.md", AGREED.replace("Dark mode", "Night mode"));
+    await h.fire("agent_settled", { aborted: false });
+  } finally {
+    console.error = orig;
+  }
+  assert.equal(h.offered.length, 0);
+  assert.match(errs.at(-1)!, /back to Draft: 0001\. Agree again with \/spec agree/);
+  assert.match(readFileSync(join(h.cwd, "specs/0001_spec_a.md"), "utf8"), /\| Status \| Draft \|/);
+});
+
+test("the verify contract tells the agent the user is asked to agree the spec again", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), AGREED);
+  await h.commands.spec.handler("verify 1", h.ctx);
+  const c = await h.prompt();
+  assert.match(c, /put back to Draft by spec mode itself/);
+  assert.match(c, /never set Agreed yourself/);
+});
+
+test("/spec agree <spec> re-agrees a named Draft spec without sending a request", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  const p = join(h.cwd, "specs/0001_spec_a.md");
+  writeFileSync(p, FILLED);
+  await h.commands.spec.handler("agree 1", h.ctx);
+  assert.deepEqual(h.sent.user, []);
+  assert.match(readFileSync(p, "utf8"), /\| Status \| Agreed \|/);
+  assert.match(h.notes.at(-1)!, /0001 agreed/);
+});
+
+test("/spec agree <spec> refuses an implemented spec", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs/Implemented"), { recursive: true });
+  const p = join(h.cwd, "specs/Implemented/0001_spec_a.md");
+  writeFileSync(p, AGREED.replace("| Status | Agreed |", "| Status | Implemented |"));
+  await h.commands.spec.handler("agree 1", h.ctx);
+  assert.match(h.notes.at(-1)!, /already implemented/);
+  assert.match(readFileSync(p, "utf8"), /\| Status \| Implemented \|/);
+});
+
+test("/spec agree <spec> uses the same template checks as the footer spec", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  const p = join(h.cwd, "specs/0001_spec_a.md");
+  writeFileSync(p, FILLED.replace(/(## 3\. Non-goals\n)[\s\S]*?(?=## 4)/, "$1\n"));
+  await h.commands.spec.handler("agree 1", h.ctx);
+  assert.match(h.notes.at(-1)!, /Cannot agree[\s\S]*empty section "## 3\. Non-goals"/);
+  assert.match(readFileSync(p, "utf8"), /\| Status \| Draft \|/);
+});
+
 test("implement: needs plan mode, an Agreed spec, then dispatches /plan", async () => {
   const none = harness();
   await none.fire("session_start");
@@ -316,7 +458,7 @@ test("commands refuse what the current state does not allow", async () => {
   assert.match(h.notes.at(-1)!, /not on/);
   await h.commands.spec.handler("agree", h.ctx);
   assert.match(h.notes.at(-1)!, /not on/);
-  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["start", "list", "verify", "implement", "refuse", "restore", "template", "settings"]);
+  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["start", "list", "agree", "verify", "implement", "refuse", "restore", "template", "settings"]);
   await h.commands.spec.handler("start", h.ctx);
   await h.commands.spec.handler("start", h.ctx);
   assert.match(h.notes.at(-1)!, /already on/);
