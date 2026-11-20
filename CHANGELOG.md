@@ -4,6 +4,7 @@
 
 ### Added
 
+- `renameSession` setting (off by default): the session that creates a spec is renamed `spec NNNN creation`, so `/resume` shows which spec it wrote.
 - `/spec verify` ends by asking whether to agree again each spec it changed: an `Agreed` spec that had to be fixed goes back to `Draft`, and you get one question per spec that changed that way (`Agree again` / `Keep Draft`). A spec only stamped `Last verified` stays `Agreed` and is not offered, and so is a spec that was already `Draft`.
 - `/spec agree <spec>` agrees an existing `Draft` spec (`/spec agree 0003`) with the same template checks as `/spec agree`: answering `Keep Draft` after a verify run is not final, and you no longer have to edit the `Status` row by hand. `Implemented` and `Refused` specs are refused.
 

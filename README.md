@@ -89,7 +89,8 @@ asks first, because it starts a decision you own: the generic template is copied
 {
   "specsDir": "specs",
   "language": "English",
-  "verifyCount": 2
+  "verifyCount": 2,
+  "renameSession": false
 }
 ```
 
@@ -98,6 +99,8 @@ asks first, because it starts a decision you own: the generic template is copied
 `language` is the language specs are written in, whatever the language of the conversation. Anything but a non-empty string is ignored with a warning and `"English"` is used.
 
 `verifyCount` is how many specs `/spec verify` checks per run.
+
+`renameSession`, when `true`, renames the session `spec NNNN creation` as soon as the agent creates spec `NNNN` in spec mode (the name `/resume` shows). Editing an existing spec does not rename it. Anything but `true` or `false` is ignored with a warning and `false` is used.
 
 ## Develop
 

@@ -21,6 +21,7 @@ interface Settings {
   specsDir: string;
   language: string;
   verifyCount: number;
+  renameSession: boolean;
 }
 
 const STATE_ENTRY = "spec-mode";
@@ -34,7 +35,7 @@ const MENU_DETAIL: Record<string, string> = {
   start: "enter spec mode", verify: "check specs against the code", implement: "hand a spec to plan mode",
   restore: "a refused spec", template: "create the project template", exit: "leave spec mode",
 };
-const DEFAULT_SETTINGS: Settings = { specsDir: "specs", language: "English", verifyCount: 2 };
+const DEFAULT_SETTINGS: Settings = { specsDir: "specs", language: "English", verifyCount: 2, renameSession: false };
 /** Menu action → what to say when its picker has nothing to offer. */
 const PICKER_EMPTY: Record<string, string> = {
   implement: "No Agreed spec to implement: agree one first (/spec agree).",
@@ -81,6 +82,10 @@ export default function specMode(pi: ExtensionAPI) {
     if (!Number.isInteger(s.verifyCount) || s.verifyCount < 1) {
       notify(ctx, `pi-spec-mode: verifyCount must be a positive integer, using 2`, "warning");
       s.verifyCount = 2;
+    }
+    if (typeof s.renameSession !== "boolean") {
+      notify(ctx, `pi-spec-mode: renameSession must be true or false, using false`, "warning");
+      s.renameSession = false;
     }
     return s;
   }
@@ -530,6 +535,8 @@ export default function specMode(pi: ExtensionAPI) {
       if (changed && state.mode === "verify") save(ctx, { ...state, drafts: [...new Set([...(state.drafts ?? []), p])] });
       notify(ctx, selfAgreed ? `${basename(p).slice(0, 4)}: only /spec agree can set a spec to Agreed, back to ${getField(md, "Status")}` : `${basename(p).slice(0, 4)} changed: back to Draft, agree it again when ready`);
     }
+    // Only the session that creates the spec is renamed: editing an existing one is not its creation.
+    if (state.mode === "spec" && !before && settings.renameSession) pi.setSessionName(`spec ${basename(p).slice(0, 4)} creation`);
     if (state.mode === "spec" && state.spec !== p) save(ctx, { ...state, spec: p });
     else refresh(ctx);
   });

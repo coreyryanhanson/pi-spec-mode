@@ -22,6 +22,7 @@ function harness(opts: { plan?: boolean; picks?: string[]; confirms?: boolean[] 
   const asked: { title: string; message: string }[] = []; // confirmation dialogs, in order
   const answers = [...(opts.confirms ?? [])];
   let status: string | undefined;
+  let sessionName: string | undefined;
 
   const pi: any = {
     on: (e: string, h: Handler) => (handlers[e] ??= []).push(h),
@@ -30,6 +31,7 @@ function harness(opts: { plan?: boolean; picks?: string[]; confirms?: boolean[] 
     appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data: structuredClone(data) }),
     sendMessage: (m: any) => sent.custom.push(m),
     sendUserMessage: (m: string) => sent.user.push(m),
+    setSessionName: (n: string) => (sessionName = n),
     getCommands: () => (opts.plan ? [{ name: "plan", source: "extension" }] : []),
     events: { on: (c: string, f: any) => (bus[c] ??= []).push(f), emit: (c: string, p: unknown) => bus[c]?.forEach((f) => f(p)) },
   };
@@ -59,7 +61,7 @@ function harness(opts: { plan?: boolean; picks?: string[]; confirms?: boolean[] 
     await fire("before_agent_start", { systemPromptOptions: { sections } });
     return sections["spec-mode"];
   };
-  return { cwd, ctx, fire, prompt, commands, tools, bus, sent, notes, offered, asked, status: () => status, entries };
+  return { cwd, ctx, fire, prompt, commands, tools, bus, sent, notes, offered, asked, status: () => status, sessionName: () => sessionName, entries };
 }
 
 const TEMPLATE = readFileSync(new URL("../templates/spec_template.md", import.meta.url), "utf8");
@@ -708,6 +710,46 @@ test("a specsDir outside the project or on a file falls back to specs with a war
     assert.deepEqual(h.notes, ['pi-spec-mode: specsDir must be a folder inside the project, using "specs"'], specsDir);
     await h.commands.spec.handler("list", h.ctx);
     assert.match(h.notes.at(-1)!, /No spec in specs\//, specsDir);
+  }
+});
+
+/** The agent writes a spec file in spec mode, through the tool hooks. */
+async function agentWrite(h: any, path: string, content: string, id: string) {
+  const input = { path };
+  await h.fire("tool_call", { toolName: "write", toolCallId: id, input });
+  mkdirSync(join(h.cwd, "specs"), { recursive: true });
+  writeFileSync(join(h.cwd, path), content);
+  await h.fire("tool_result", { toolName: "write", toolCallId: id, input, isError: false });
+}
+
+test("renameSession names the session after the spec it creates, not one it edits", async () => {
+  const h = harness();
+  h.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "renameSession": true }');
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), FILLED);
+  await h.fire("session_start");
+  await h.commands.spec.handler("start", h.ctx);
+  await agentWrite(h, "specs/0001_spec_a.md", FILLED + "\n", "w1");
+  assert.equal(h.sessionName(), undefined);
+  await agentWrite(h, "specs/0002_spec_b.md", FILLED, "w2");
+  assert.equal(h.sessionName(), "spec 0002 creation");
+});
+
+test("the session is not renamed by default, and a non-boolean renameSession falls back to false", async () => {
+  for (const file of [undefined, '{ "renameSession": "yes" }']) {
+    const h = harness();
+    h.ctx.isProjectTrusted = () => true;
+    if (file) {
+      mkdirSync(join(h.cwd, ".pi"));
+      writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), file);
+    }
+    await h.fire("session_start");
+    if (file) assert.match(h.notes.at(-1)!, /renameSession must be true or false/);
+    await h.commands.spec.handler("start", h.ctx);
+    await agentWrite(h, "specs/0001_spec_a.md", FILLED, "w1");
+    assert.equal(h.sessionName(), undefined);
   }
 });
 
