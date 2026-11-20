@@ -18,6 +18,7 @@
 ### Fixed
 
 - A spec file that is a symbolic link is now ignored: a linked spec whose target said `Status | Refused` made session start write the `REFUSED` banner into the target, outside the specs folder, then move the link into `specs/Refused/` where it no longer resolved.
+- `/spec agree 9999` or `/spec verify 9999` (a number or spec file name that matches no spec, or a refused one) now answers `No spec "9999"`: it used to turn spec mode on and send `agree 9999` to the agent as a request.
 
 ## 0.0.2
 

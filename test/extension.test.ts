@@ -270,6 +270,19 @@ test("/spec verify <spec> checks only that spec, even if verified today", async 
   assert.equal(h.status(), "✎ spec-mode");
 });
 
+test("/spec agree or verify with a spec number that matches nothing says so and stays off", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), FILLED);
+  for (const args of ["agree 9999", "verify 9999", "agree 0009_spec_x.md"]) {
+    await h.commands.spec.handler(args, h.ctx);
+    assert.match(h.notes.at(-1)!, /No spec/, args);
+  }
+  assert.deepEqual(h.sent.user, []);
+  assert.equal(h.status(), undefined);
+});
+
 test("verify that drops an Agreed spec to Draft offers to agree it again at the end of the run", async () => {
   const h = harness({ picks: ["Agree again"] });
   await h.fire("session_start");

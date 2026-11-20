@@ -24,7 +24,7 @@ pi -e ./                           # try a local checkout
 |---|---|
 | `/spec` | Menu fitted to the current state, listing the same commands as `/spec ` + Tab (with a short detail in parentheses); implement, restore, and agree or refuse with no spec in progress, then pick the spec from a list of the ones they accept (type the number instead if you prefer: `/spec implement 0003`) |
 | `/spec start` | Enter spec mode, send nothing |
-| `/spec <request>` | Enter spec mode and send the request |
+| `/spec <request>` | Enter spec mode and send the request. A request may start with a command word (`/spec verify that login works offline`); `/spec agree` or `/spec verify` followed by a spec number or file name is always the command, even when no spec matches |
 | `/spec list` | Every spec, refused ones included: number, `Status`, `Last verified` and how many days ago |
 | `/spec agree [spec]` | Set the spec shown in the footer to `Agreed` and leave spec mode; with a spec name, agree that `Draft` spec (`/spec agree 0003`) whatever the mode, without closing the spec being written |
 | `/spec refuse [spec]` | Set a spec (default: the one in the footer) to `Refused` and move it to `specs/Refused/`: kept, but ignored by `/spec verify` and the agent. Refusing the spec in the footer leaves spec mode |

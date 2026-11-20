@@ -361,8 +361,9 @@ export default function specMode(pi: ExtensionAPI) {
       const idle = ctx.isIdle();
       const busy = () => notify(ctx, "The agent is running: wait or interrupt, then retry.", "warning");
       // `/spec verify that login works offline` is a request: commands without an argument only match alone.
-      // `/spec verify 0003` and `/spec agree 0003` name a spec, so they are the command.
-      const namesSpec = ["verify", "agree"].includes(sub) && rest !== "" && !!resolveSpec(specsAbs(ctx), rest);
+      // `/spec verify 0003` and `/spec agree 0003` name a spec, so they are the command; a number or spec file name
+      // that matches nothing is too, so a typo gets "No spec" instead of starting spec mode.
+      const namesSpec = ["verify", "agree"].includes(sub) && rest !== "" && (/^\d{1,4}$|^\d{4}_spec_.+\.md$/i.test(rest) || !!resolveSpec(specsAbs(ctx), rest));
       const isRequest = rest !== "" && !namesSpec && ["start", "list", "exit", "off", "agree", "verify", "template", "settings"].includes(sub);
 
       switch (isRequest ? undefined : sub) {
