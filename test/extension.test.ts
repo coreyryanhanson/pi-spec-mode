@@ -80,11 +80,11 @@ test("/spec <request> enters spec mode, contract and status follow", async () =>
   assert.equal(await h.prompt(), undefined);
   await h.commands.spec.handler("write the spec for offline mode", h.ctx);
   assert.deepEqual(h.sent.user, ["write the spec for offline mode"]);
-  assert.equal(h.status(), "spec-mode");
+  assert.equal(h.status(), "✎ spec-mode");
   // A request starting with a command word is sent as a request.
   await h.commands.spec.handler("verify that login works offline", h.ctx);
   assert.deepEqual(h.sent.user.at(-1), "verify that login works offline");
-  assert.equal(h.status(), "spec-mode");
+  assert.equal(h.status(), "✎ spec-mode");
   const contract = await h.prompt();
   assert.match(contract, /\[PI SPEC MODE CONTRACT v1: SPEC\]/);
   assert.match(contract, /specs\/0001_spec_<feature>\.md/);
@@ -147,7 +147,7 @@ test("write → complete → menu Agree flips Status and leaves spec mode", asyn
   mkdirSync(join(h.cwd, "specs"));
   writeFileSync(join(h.cwd, "specs/0001_spec_x.md"), FILLED);
   await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0001_spec_x.md" }, isError: false });
-  assert.equal(h.status(), "spec-mode 0001 · Draft");
+  assert.equal(h.status(), "✎ spec-mode 0001 · Draft");
   await h.tools.spec_complete.execute("c", { path: "specs/0001_spec_x.md" }, undefined, undefined, h.ctx);
   await h.fire("agent_settled", { aborted: false });
   assert.match(readFileSync(join(h.cwd, "specs/0001_spec_x.md"), "utf8"), /\| Status \| Agreed \|/);
@@ -163,7 +163,7 @@ test("agree refused while template text is left", async () => {
   await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0001_spec_x.md" }, isError: false });
   await h.commands.spec.handler("agree", h.ctx);
   assert.match(h.notes.at(-1)!, /Cannot agree/);
-  assert.equal(h.status(), "spec-mode 0001 · Draft / Agreed / Implemented / Refused");
+  assert.equal(h.status(), "✎ spec-mode 0001 · Draft / Agreed / Implemented / Refused");
 });
 
 test("agree refused when the Status row is gone", async () => {
@@ -232,7 +232,7 @@ test("verify run: picks the two oldest, uses its contract, returns to previous m
     writeFileSync(join(h.cwd, "specs", f), `| Status | Agreed |\n| Last verified | ${d} |\n`);
   await h.commands.spec.handler("verify", h.ctx);
   assert.deepEqual(h.sent.user, ["Verify the specs."]);
-  assert.equal(h.status(), "spec-mode verify");
+  assert.equal(h.status(), "✎ spec-mode verify");
   const c = await h.prompt();
   assert.match(c, /VERIFY/);
   assert.match(c, /specs\/0002_spec_b\.md`, `specs\/Implemented\/0003_spec_c\.md/);
@@ -253,7 +253,7 @@ test("/spec verify <spec> checks only that spec, even if verified today", async 
   // Not a spec name: still a request.
   await h.commands.spec.handler("verify that login works offline", h.ctx);
   assert.equal(h.sent.user.at(-1), "verify that login works offline");
-  assert.equal(h.status(), "spec-mode");
+  assert.equal(h.status(), "✎ spec-mode");
 });
 
 test("verify that drops an Agreed spec to Draft offers to agree it again at the end of the run", async () => {
@@ -375,11 +375,11 @@ test("/spec agree <spec> on another spec keeps the one in progress in spec mode"
   writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), FILLED);
   writeFileSync(join(h.cwd, "specs/0002_spec_b.md"), FILLED);
   await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0002_spec_b.md" }, isError: false });
-  assert.equal(h.status(), "spec-mode 0002 · Draft");
+  assert.equal(h.status(), "✎ spec-mode 0002 · Draft");
   await h.commands.spec.handler("agree 1", h.ctx);
   assert.match(h.notes.at(-1)!, /0001 agreed/);
   assert.match(readFileSync(join(h.cwd, "specs/0001_spec_a.md"), "utf8"), /\| Status \| Agreed \|/);
-  assert.equal(h.status(), "spec-mode 0002 · Draft");
+  assert.equal(h.status(), "✎ spec-mode 0002 · Draft");
   assert.deepEqual(h.sent.custom, []); // spec mode never stopped: no NORMAL contract
 });
 
@@ -393,7 +393,7 @@ test("refusing the spec in progress leaves spec mode, refusing another one keeps
   await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0002_spec_b.md" }, isError: false });
   await h.commands.spec.handler("refuse 1", h.ctx);
   assert.ok(existsSync(join(h.cwd, "specs/Refused/0001_spec_a.md")));
-  assert.equal(h.status(), "spec-mode 0002 · Draft");
+  assert.equal(h.status(), "✎ spec-mode 0002 · Draft");
   await h.commands.spec.handler("refuse", h.ctx);
   assert.ok(existsSync(join(h.cwd, "specs/Refused/0002_spec_b.md")));
   assert.match(h.notes.at(-1)!, /0002 refused[\s\S]*spec mode off/);
@@ -472,7 +472,7 @@ test("/spec menu runs the same commands as typing them", async () => {
   await h.commands.spec.handler("", h.ctx);
   assert.match(h.sent.user[0], /^\/plan Implement the agreed spec `specs\/0001_spec_x\.md`/);
   await h.commands.spec.handler("", h.ctx);
-  assert.equal(h.status(), "spec-mode");
+  assert.equal(h.status(), "✎ spec-mode");
   await h.commands.spec.handler("", h.ctx);
   assert.equal(h.status(), undefined);
 });
@@ -482,7 +482,7 @@ test("state survives a reload", async () => {
   await h.fire("session_start");
   await h.commands.spec.handler("start", h.ctx);
   await h.fire("session_start", { reason: "reload" });
-  assert.equal(h.status(), "spec-mode");
+  assert.equal(h.status(), "✎ spec-mode");
 });
 
 test("/spec template creates the project template once, then asks the agent to adapt it", async () => {

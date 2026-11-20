@@ -9,6 +9,7 @@
 
 ### Changed
 
+- The footer reads `✎ spec-mode` and is blue instead of violet.
 - Spec mode now closes only on the spec it was opened for: `/spec agree 0003` on another spec agrees it and keeps the session that is writing `0004` running, where it used to close. Conversely `/spec refuse` (or a hand-set `Status | Refused`) on the spec in the footer leaves spec mode instead of leaving it open with nothing left to write.
 
 - `/spec template` no longer just copies the generic template: it warns you first, then the agent quickly analyses the project (type, stack, domain) and rewrites `specs/spec_template.md` for it, and asks you to reread the result — `/spec agree` checks every spec against that file. Answer `No` and you are offered the plain copy instead. The agent may change the template only during this run.

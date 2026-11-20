@@ -128,12 +128,13 @@ export default function specMode(pi: ExtensionAPI) {
   function refresh(ctx: ExtensionContext) {
     if (!ctx.hasUI) return;
     let text: string | undefined;
-    if (state.mode === "verify") text = "spec-mode verify";
+    if (state.mode === "verify") text = "✎ spec-mode verify";
     else if (state.mode === "spec") {
       const status = state.spec && specStatus(ctx, state.spec);
-      text = status ? `spec-mode ${basename(state.spec!).slice(0, 4)} · ${status}` : "spec-mode";
+      text = status ? `✎ spec-mode ${basename(state.spec!).slice(0, 4)} · ${status}` : "✎ spec-mode";
     }
-    ctx.ui.setStatus("spec-mode", text && ctx.ui.theme.fg("accent", text));
+    // mdLink is the blue of the built-in themes; accent is violet and reads as plan mode
+    ctx.ui.setStatus("spec-mode", text && ctx.ui.theme.fg("mdLink", text));
   }
 
   function save(ctx: ExtensionContext, next: State) {
