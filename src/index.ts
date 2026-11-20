@@ -504,7 +504,13 @@ export default function specMode(pi: ExtensionAPI) {
       return;
     }
     const wasAgreed = getField(before, "Status") === "Agreed";
-    const isAgreed = getField(md, "Status") === "Agreed";
+    let isAgreed = getField(md, "Status") === "Agreed";
+    // A verify run may only move an Agreed spec to Implemented: any other status goes back to Agreed, so rule 2 below sees the change.
+    if (state.mode === "verify" && wasAgreed && !isAgreed && getField(md, "Status") !== "Implemented") {
+      md = setField(md, "Status", "Agreed");
+      isAgreed = true;
+      writeFileSync(abs, md);
+    }
     // A verify run stamps `Last verified` on an Agreed spec: that alone is not a change.
     const unstamped = (s: string) => setField(s, "Last verified", "");
     // Rule 1: only /spec agree makes a spec Agreed.

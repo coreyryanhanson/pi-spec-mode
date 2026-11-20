@@ -783,6 +783,28 @@ test("verify run: stamping an Agreed spec keeps it Agreed, changing it or self-a
   assert.match(await edit(a, "v5", `${AGREED}\nRule fixed to match the code.\n`), /\| Status \| Implemented \|/);
 });
 
+test("verify run: an Agreed spec the agent sets to Draft itself is handled like any changed Agreed spec", async () => {
+  const h = harness({ picks: ["Keep Draft"] });
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  const a = join(h.cwd, "specs/0001_spec_a.md");
+  const b = join(h.cwd, "specs/0002_spec_b.md");
+  writeFileSync(a, AGREED);
+  writeFileSync(b, AGREED);
+  await h.commands.spec.handler("verify", h.ctx);
+  const selfDraft = AGREED.replace("| Status | Agreed |", "| Status | Draft |");
+  // Status only: nothing to agree again, the spec stays Agreed.
+  await verifyEdit(h, "specs/0001_spec_a.md", selfDraft, "d1");
+  assert.equal(readFileSync(a, "utf8"), AGREED);
+  // Status and content: Draft, Version + 1, and offered again when the run ends.
+  await verifyEdit(h, "specs/0002_spec_b.md", `${selfDraft}\nA rule nobody agreed.\n`, "d2");
+  const md = readFileSync(b, "utf8");
+  assert.match(md, /\| Status \| Draft \|/);
+  assert.match(md, /\| Version \| 2 \|/);
+  await h.fire("agent_settled", { aborted: false });
+  assert.equal(h.offered.at(-1)?.[0], "Agree again");
+});
+
 test("a project whose own path has a folder starting with - can still write specs", async () => {
   const h = harness();
   const cwd = join(h.cwd, "-perso", "app");
