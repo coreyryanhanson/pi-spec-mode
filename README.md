@@ -114,12 +114,13 @@ npm run typecheck
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.
 
-## My other pi extensions
+## My other pi extensions & tools
 
-| Extension | What it does | Install |
+| Extension/tool | What it does | Install |
 |---|---|---|
 | [pi-deepseek-peak](https://github.com/psychobarge/pi-deepseek-peak) | Shows DeepSeek peak-hour status and corrects session prices | `pi install npm:pi-deepseek-peak` |
 | [pi-deepseek-vision](https://github.com/psychobarge/pi-deepseek-vision) | Gives DeepSeek vision through a local or remote vision LLM | `pi install npm:pi-deepseek-vision` |
+| [pi-sessions](https://github.com/psychobarge/pi-sessions) | Terminal UI for browsing, previewing, resuming and managing Pi sessions | `pipx install pi-sessions-tui` |
 
 ## License
 
