@@ -1,4 +1,4 @@
-# pi-spec-mode
+# pi-spec-mode ✎
 
 [![npm version](https://img.shields.io/npm/v/pi-spec-mode)](https://www.npmjs.com/package/pi-spec-mode)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
