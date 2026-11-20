@@ -118,6 +118,11 @@ export function specChoices(specsDir: string): SpecChoice[] {
   return specRows(specsDir).map(({ num, name, status, folder }) => ({ num, status, folder, label: `${num} · ${status} · ${name}`, arg: num }));
 }
 
+/** Spec picker cursor after ↑ or ↓: both wrap around, ↑ on the first spec to the last and ↓ on the last to the first. */
+export function pickerMove(at: number, count: number, key: "up" | "down"): number {
+  return (at + (key === "up" ? count - 1 : 1)) % count;
+}
+
 export const REFUSED_BANNER = (date: string) =>
   `> **REFUSED on ${date}: ignore this spec.** Kept for reference only; it is not a requirement: do not implement, verify or extend it.`;
 

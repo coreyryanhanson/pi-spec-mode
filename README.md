@@ -22,7 +22,7 @@ pi -e ./                           # try a local checkout
 
 | Command | What it does |
 |---|---|
-| `/spec` | Menu fitted to the current state, listing the same commands as `/spec ` + Tab (with a short detail in parentheses); implement, restore, and agree or refuse with no spec in progress, then pick the spec from a list of the ones they accept (type the number instead if you prefer: `/spec implement 0003`) |
+| `/spec` | Menu fitted to the current state, listing the same commands as `/spec ` + Tab (with a short detail in parentheses); implement, restore, and agree or refuse with no spec in progress, then pick the spec from a list of the ones they accept (↑ on the first entry jumps to the last, ↓ on the last back to the first; type the number instead if you prefer: `/spec implement 0003`) |
 | `/spec start` | Enter spec mode, send nothing |
 | `/spec <request>` | Enter spec mode and send the request. A request may start with a command word (`/spec verify that login works offline`); `/spec agree` or `/spec verify` followed by a spec number or file name is always the command, even when no spec matches |
 | `/spec list` | Every spec, refused ones included: number, `Status`, `Last verified` and how many days ago |

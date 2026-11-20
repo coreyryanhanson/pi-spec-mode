@@ -4,6 +4,7 @@
 
 ### Added
 
+- In the spec picker of the `/spec` menu, ↑ on the first spec jumps to the last one and ↓ on the last spec back to the first, so the newest specs are one key away.
 - `/spec settings` is now interactive: after showing the effective settings it opens a menu to change `specsDir`, `language`, `verifyCount` or `renameSession` and save it in the project or the global file. Invalid values are refused with the same rules as the files, other keys are kept, and a settings file that is not valid JSON is never overwritten.
 - `renamePlanSession` setting (off by default): `/spec implement` renames the session `spec NNNN planning` before handing spec `NNNN` to plan mode, whether the spec is typed or picked from the `/spec` menu.
 - `renameSession` setting (off by default): the session that creates a spec is renamed `spec NNNN creation`, so `/resume` shows which spec it wrote.

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
-  emptySections, getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber,
+  emptySections, getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber, pickerMove,
   refuseSpec, resolveSpec, restoreSpec, setField, settingError, specChoices, specSummary, specTable, sweepRefused, verifyQueue, withSetting,
 } from "../src/core.ts";
 
@@ -166,4 +166,12 @@ test("withSetting sets one key, keeps the others and refuses a file that is not 
   assert.deepEqual(JSON.parse(withSetting(undefined, "renameSession", true)), { renameSession: true });
   assert.throws(() => withSetting("{ broken", "language", "French"));
   assert.throws(() => withSetting("[1]", "language", "French"), /not a JSON object/);
+});
+
+test("pickerMove: up on the first spec wraps to the last, down on the last wraps to the first", () => {
+  assert.equal(pickerMove(0, 4, "up"), 3);
+  assert.equal(pickerMove(2, 4, "up"), 1);
+  assert.equal(pickerMove(1, 4, "down"), 2);
+  assert.equal(pickerMove(3, 4, "down"), 0);
+  assert.equal(pickerMove(0, 1, "up"), 0);
 });

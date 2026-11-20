@@ -1,11 +1,11 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, ExtensionSelectorComponent, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, listSpecs, missingSections,
-  nextSpecNumber, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, settingError, specChoices, type SpecChoice, specSummary, specTable, sweepRefused, today, verifyQueue, withSetting,
+  nextSpecNumber, pickerMove, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, settingError, specChoices, type SpecChoice, specSummary, specTable, sweepRefused, today, verifyQueue, withSetting,
 } from "./core.ts";
 import { implementRequest, NORMAL_CONTRACT, specContract, templateRequest, verifyContract } from "./prompts.ts";
 
@@ -113,6 +113,25 @@ export default function specMode(pi: ExtensionAPI) {
   function specStatus(ctx: ExtensionContext, p: string): string | undefined {
     const abs = resolve(ctx.cwd, p);
     return existsSync(abs) ? getField(readFileSync(abs, "utf8"), "Status") : undefined;
+  }
+
+  /** pi's selector, except ↑ and ↓ wrap around the list; plain select outside the terminal UI. */
+  function pickSpec(ctx: ExtensionContext, title: string, labels: string[]): Promise<string | undefined> {
+    if (ctx.mode !== "tui") return ctx.ui.select(title, labels);
+    return ctx.ui.custom<string | undefined>((tui, _theme, kb, done) => {
+      const list = new ExtensionSelectorComponent(title, labels, done, () => done(undefined), { tui });
+      const forward = list.handleInput.bind(list);
+      let at = 0; // the selector's cursor is private: track it to know when a move must wrap
+      list.handleInput = (key: string) => {
+        const move = kb.matches(key, "tui.select.up") || key === "k" ? "up" : kb.matches(key, "tui.select.down") || key === "j" ? "down" : undefined;
+        // The selector clamps at both ends: walk it to the other end instead.
+        if (move === "up" && at === 0) for (let i = 1; i < labels.length; i++) forward("j");
+        else if (move === "down" && at === labels.length - 1) for (let i = 1; i < labels.length; i++) forward("k");
+        else forward(key);
+        if (move) at = pickerMove(at, labels.length, move);
+      };
+      return list;
+    });
   }
 
   /** What a menu action may act on: only an Agreed spec can be implemented, only a Refused/ one restored. */
@@ -421,7 +440,7 @@ export default function specMode(pi: ExtensionAPI) {
           if (!entry.asksSpec) return run(menuSub, ctx);
           const choices = specPicker(ctx, menuSub);
           if (!choices.length) return notify(ctx, PICKER_EMPTY[menuSub] ?? "No spec to pick.", "warning");
-          const which = await ctx.ui.select(`${menuSub}: which spec?`, choices.map((c) => c.label));
+          const which = await pickSpec(ctx, `${menuSub}: which spec?`, choices.map((c) => c.label));
           const arg = choices.find((c) => c.label === which)?.arg;
           return arg ? run(`${menuSub} ${arg}`, ctx) : undefined;
         }
