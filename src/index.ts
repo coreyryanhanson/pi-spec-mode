@@ -29,17 +29,17 @@ const MUTEX = "workflow:mutex:v1"; // shared with @narumitw/pi-plan-mode: only o
 const READ_TOOLS = new Set(["read", "grep", "find", "ls", "spec_question", "spec_complete"]);
 const BUNDLED_TEMPLATE = fileURLToPath(new URL("../templates/spec_template.md", import.meta.url));
 const USAGE = "/spec start | <request> | list | agree [spec] | refuse [spec] | restore <spec> | verify [spec] | implement <spec> | template | exit | settings";
-/** `/spec` menu label → the subcommand it runs, and whether it first asks which spec. */
-const MENU: Record<string, [string, boolean]> = {
-  "Start spec mode": ["start", false], "List specs": ["list", false], "Verify specs": ["verify", false], "Implement a spec": ["implement", true],
-  "Refuse a spec": ["refuse", true], "Restore a refused spec": ["restore", true], "Create the project template": ["template", false],
-  "Settings": ["settings", false], "Agree the spec": ["agree", false], "Refuse the spec": ["refuse", false], "Leave spec mode": ["exit", false],
+/** `/spec` menu detail shown after the command word, so the menu reads like the completion. */
+const MENU_DETAIL: Record<string, string> = {
+  start: "enter spec mode", verify: "check specs against the code", implement: "hand a spec to plan mode",
+  restore: "a refused spec", template: "create the project template", exit: "leave spec mode",
 };
 const DEFAULT_SETTINGS: Settings = { specsDir: "specs", language: "English", verifyCount: 2 };
 /** Menu action → what to say when its picker has nothing to offer. */
 const PICKER_EMPTY: Record<string, string> = {
   implement: "No Agreed spec to implement: agree one first (/spec agree).",
   restore: "No refused spec to restore.",
+  agree: "No Draft spec to agree.",
   refuse: "No spec to refuse.",
 };
 
@@ -122,6 +122,7 @@ export default function specMode(pi: ExtensionAPI) {
     const all = specChoices(specsAbs(ctx));
     if (sub === "implement") return all.filter((c) => c.status === "Agreed");
     if (sub === "restore") return all.filter((c) => c.folder === "Refused");
+    if (sub === "agree") return all.filter((c) => c.folder === "" && c.status === "Draft");
     return all.filter((c) => c.folder === ""); // refuse resolves only in the specs folder
   }
 
@@ -341,15 +342,17 @@ export default function specMode(pi: ExtensionAPI) {
   pi.on("session_start", async (_e, ctx) => restore(ctx));
   pi.on("session_tree", async (_e, ctx) => restore(ctx));
 
+  /** Subcommands the current state accepts, in menu order: the menu and the completion offer the same list. */
+  function commands(): string[] {
+    if (state.mode === "off") return ["start", "list", "agree", "verify", "implement", "refuse", "restore", "template", "settings"];
+    if (state.mode === "spec") return [...(state.spec ? ["agree"] : []), "refuse", "list", "template", "exit", "settings"];
+    return ["list", "exit", "settings"];
+  }
+
   pi.registerCommand("spec", {
     description: `Spec mode: ${USAGE}`,
     getArgumentCompletions: (prefix) => {
-      // Offer only what the current state accepts.
-      const valid =
-        state.mode === "off" ? ["start", "list", "agree", "verify", "implement", "refuse", "restore", "template", "settings"]
-        : state.mode === "spec" ? [...(state.spec ? ["agree"] : []), "list", "refuse", "exit", "template", "settings"]
-        : ["list", "settings"];
-      const items = valid.filter((s) => s.startsWith(prefix));
+      const items = commands().filter((s) => s.startsWith(prefix));
       return items.length ? items.map((value) => ({ value, label: value })) : null;
     },
     handler: async function run(args, ctx): Promise<void> {
@@ -365,15 +368,18 @@ export default function specMode(pi: ExtensionAPI) {
       switch (isRequest ? undefined : sub) {
         case "": {
           if (!ctx.hasUI) return notify(ctx, `Usage: ${USAGE}`);
-          const options =
-            state.mode === "off"
-              ? ["Start spec mode", "List specs", "Verify specs", "Implement a spec", "Refuse a spec", "Restore a refused spec", "Create the project template", "Settings"]
-              : [...(state.spec ? ["Agree the spec", "Refuse the spec"] : []), "List specs", "Leave spec mode", "Settings"];
-          const pick = await ctx.ui.select("Spec mode", options);
-          const [menuSub, asksSpec] = (pick && MENU[pick]) || [];
+          // Without a spec in progress, agree and refuse need one picked, like implement and restore.
+          const entries = commands().map((sub) => {
+            const current = (sub === "agree" || sub === "refuse") && !!state.spec;
+            const detail = current ? "the spec in progress" : MENU_DETAIL[sub];
+            return { sub, label: detail ? `${sub} (${detail})` : sub, asksSpec: ["agree", "refuse", "implement", "restore"].includes(sub) && !current };
+          });
+          const pick = await ctx.ui.select("Spec mode", entries.map((e) => e.label));
+          const entry = entries.find((e) => e.label === pick);
           // The menu runs the same command as typing it.
-          if (!menuSub) return;
-          if (!asksSpec) return run(menuSub, ctx);
+          if (!entry) return;
+          const menuSub = entry.sub;
+          if (!entry.asksSpec) return run(menuSub, ctx);
           const choices = specPicker(ctx, menuSub);
           if (!choices.length) return notify(ctx, PICKER_EMPTY[menuSub] ?? "No spec to pick.", "warning");
           const which = await ctx.ui.select(`${menuSub}: which spec?`, choices.map((c) => c.label));

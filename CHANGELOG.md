@@ -9,6 +9,7 @@
 
 ### Changed
 
+- The `/spec` menu uses the command words of `/spec ` + Tab (`exit (leave spec mode)` instead of “Leave spec mode”, `implement (hand a spec to plan mode)`...) and offers exactly the same commands in every state: `agree` outside spec mode (picks a Draft spec), `template` in spec mode and `exit` during a verify run are now in both.
 - The footer reads `✎ spec-mode` and is blue instead of violet.
 - Spec mode now closes only on the spec it was opened for: `/spec agree 0003` on another spec agrees it and keeps the session that is writing `0004` running, where it used to close. Conversely `/spec refuse` (or a hand-set `Status | Refused`) on the spec in the footer leaves spec mode instead of leaving it open with nothing left to write.
 
@@ -18,7 +19,7 @@
 
 ### Added
 
-- The `/spec` menu no longer asks you to type a spec number: “Implement a spec”, “Refuse a spec” and “Restore a refused spec” show a list of the specs they accept (`0001 · Agreed · login`), filtered on what the action can act on: only `Agreed` specs can be implemented, only `specs/Refused/` ones restored, and only the specs folder is offered for a refusal. Nothing to offer → a message naming the command to type. `/spec implement 0003` and friends still work.
+- The `/spec` menu no longer asks you to type a spec number: `implement`, `refuse` and `restore` (and `agree` outside spec mode) show a list of the specs they accept (`0001 · Agreed · login`), filtered on what the action can act on: only `Agreed` specs can be implemented, only `specs/Refused/` ones restored, and only the specs folder is offered for a refusal. Nothing to offer → a message naming the command to type. `/spec implement 0003` and friends still work.
 - `examples/0001_spec_dark_mode.md` ships with the package: a deliberately barebone but complete spec to read before writing your own. The tests read their fixture from it, so it cannot drift from the format `/spec agree` accepts.
 - GitHub Actions runs `npm run typecheck` and `npm test` on every push and pull request (Node 22): a regression in the bash filter or the status rules now shows up without anyone remembering to run the tests.
 

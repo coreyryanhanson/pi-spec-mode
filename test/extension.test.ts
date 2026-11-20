@@ -95,7 +95,7 @@ test("spec contract lists existing specs by title and goal, and asks for a confl
   const h = harness();
   await h.fire("session_start");
   mkdirSync(join(h.cwd, "specs"));
-  writeFileSync(join(h.cwd, "specs/0001_spec_dark_mode.md"), FILLED.replace("| Status | Draft |", "| Status | Agreed |"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_dark_mode.md"), AGREED);
   await h.commands.spec.handler("start", h.ctx);
   const contract = await h.prompt();
   assert.match(contract, /- specs\/0001_spec_dark_mode\.md — Agreed — Dark mode: The user can switch the app to a dark theme\./);
@@ -192,7 +192,7 @@ test("editing an Agreed spec puts it back to Draft and bumps Version", async () 
   const h = harness();
   await h.fire("session_start");
   mkdirSync(join(h.cwd, "specs"));
-  writeFileSync(join(h.cwd, "specs/0001_spec_x.md"), FILLED.replace("| Status | Draft |", "| Status | Agreed |"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_x.md"), AGREED);
   await h.commands.spec.handler("start", h.ctx);
   const ev = { toolName: "edit", toolCallId: "e1", input: { path: "specs/0001_spec_x.md" }, isError: false };
   await h.fire("tool_call", ev);
@@ -465,7 +465,7 @@ test("implement: needs plan mode, an Agreed spec, then dispatches /plan", async 
 });
 
 test("/spec menu runs the same commands as typing them", async () => {
-  const h = harness({ plan: true, picks: ["Implement a spec", "0001 · Agreed · x", "Start spec mode", "Leave spec mode"] });
+  const h = harness({ plan: true, picks: ["implement (hand a spec to plan mode)", "0001 · Agreed · x", "start (enter spec mode)", "exit (leave spec mode)"] });
   await h.fire("session_start");
   mkdirSync(join(h.cwd, "specs"));
   writeFileSync(join(h.cwd, "specs/0001_spec_x.md"), "| Status | Agreed |\n");
@@ -572,7 +572,36 @@ test("commands refuse what the current state does not allow", async () => {
   assert.match(h.notes.at(-1)!, /already on/);
   await h.commands.spec.handler("agree", h.ctx);
   assert.match(h.notes.at(-1)!, /No spec written yet/);
-  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["list", "refuse", "exit", "template", "settings"]);
+  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["refuse", "list", "template", "exit", "settings"]);
+});
+
+test("/spec menu shows the same words as the completion, in every state", async () => {
+  const h = harness({ picks: [] });
+  await h.fire("session_start");
+  const check = async () => {
+    await h.commands.spec.handler("", h.ctx);
+    const words = h.offered.at(-1)!.map((label) => label.split(" (")[0]);
+    assert.deepEqual(words, h.commands.spec.getArgumentCompletions("").map((i: any) => i.value));
+  };
+  await check();
+  await h.commands.spec.handler("start", h.ctx);
+  await check();
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_x.md"), FILLED);
+  await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0001_spec_x.md" }, isError: false });
+  await check();
+  assert.ok(h.offered.at(-1)!.includes("agree (the spec in progress)"));
+});
+
+test("/spec menu agree outside spec mode picks a Draft spec", async () => {
+  const h = harness({ picks: ["agree", "0002 · Draft · x"] });
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), AGREED);
+  writeFileSync(join(h.cwd, "specs/0002_spec_x.md"), FILLED);
+  await h.commands.spec.handler("", h.ctx);
+  assert.deepEqual(h.offered[1], ["0002 · Draft · x"]);
+  assert.match(readFileSync(join(h.cwd, "specs/0002_spec_x.md"), "utf8"), /\| Status \| Agreed \|/);
 });
 
 test("/spec menu picks a spec from a list instead of typing a number", async () => {
@@ -589,25 +618,25 @@ test("/spec menu picks a spec from a list instead of typing a number", async () 
   };
 
   // Implement offers only the Agreed one and dispatches to plan mode with its number.
-  const impl = await setup({ plan: true, picks: ["Implement a spec", "0001 · Agreed · login"] });
+  const impl = await setup({ plan: true, picks: ["implement (hand a spec to plan mode)", "0001 · Agreed · login"] });
   await impl.commands.spec.handler("", impl.ctx);
   assert.deepEqual(impl.offered[1], ["0001 · Agreed · login"]);
   assert.match(impl.sent.user[0], /^\/plan Implement the agreed spec `specs\/0001_spec_login\.md`/);
 
   // Refuse offers what it can move: the specs folder, not Implemented/ nor Refused/.
-  const refuse = await setup({ picks: ["Refuse a spec", "0002 · Draft · draft"] });
+  const refuse = await setup({ picks: ["refuse", "0002 · Draft · draft"] });
   await refuse.commands.spec.handler("", refuse.ctx);
   assert.deepEqual(refuse.offered[1], ["0001 · Agreed · login", "0002 · Draft · draft"]);
   assert.ok(existsSync(join(refuse.cwd, "specs/Refused/0002_spec_draft.md")));
 
   // Restore offers only Refused/ and brings the spec back as Draft.
-  const restore = await setup({ picks: ["Restore a refused spec", "0004 · Refused · old"] });
+  const restore = await setup({ picks: ["restore (a refused spec)", "0004 · Refused · old"] });
   await restore.commands.spec.handler("", restore.ctx);
   assert.deepEqual(restore.offered[1], ["0004 · Refused · old"]);
   assert.match(readFileSync(join(restore.cwd, "specs/0004_spec_old.md"), "utf8"), /\| Status \| Draft \|/);
 
   // Nothing eligible: a message naming the command, no picker, no dispatch.
-  const empty = harness({ plan: true, picks: ["Implement a spec"] });
+  const empty = harness({ plan: true, picks: ["implement (hand a spec to plan mode)"] });
   await empty.fire("session_start");
   mkdirSync(join(empty.cwd, "specs"));
   writeFileSync(join(empty.cwd, "specs/0001_spec_draft.md"), "| Status | Draft |\n");
@@ -647,7 +676,7 @@ test("agent setting an Agreed spec to Refused moves it instead of resetting it t
   await h.commands.spec.handler("start", h.ctx);
   mkdirSync(join(h.cwd, "specs"));
   const p = join(h.cwd, "specs/0001_spec_a.md");
-  writeFileSync(p, FILLED.replace("| Status | Draft |", "| Status | Agreed |"));
+  writeFileSync(p, AGREED);
   const input = { path: "specs/0001_spec_a.md" };
   await h.fire("tool_call", { toolName: "edit", toolCallId: "t1", input });
   writeFileSync(p, FILLED.replace("| Status | Draft |", "| Status | Refused |"));
