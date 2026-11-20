@@ -83,16 +83,25 @@ export function verifyQueue(specsDir: string, today: string, count = 2): string[
   return pick.every((r) => r.d === today) ? [] : pick.map((r) => r.p);
 }
 
+/** Every spec, Refused/ included, by number: what /spec list and the picker show. */
+function specRows(specsDir: string) {
+  return listSpecs(specsDir, true)
+    .sort((a, b) => basename(a).localeCompare(basename(b)))
+    .map((p) => {
+      const md = readFileSync(p, "utf8");
+      const [, num, name] = SPEC_FILE.exec(basename(p))!;
+      const dir = basename(dirname(p));
+      const folder: SpecChoice["folder"] = dir === "Implemented" || dir === "Refused" ? dir : "";
+      return { num, name, status: getField(md, "Status") || "?", folder, verified: getField(md, "Last verified") || "" };
+    });
+}
+
 /** One line per spec, Refused/ included: number, Status, Last verified with its age, name. */
 export function specTable(specsDir: string, today: string): string[] {
-  const byNumber = listSpecs(specsDir, true).sort((a, b) => basename(a).localeCompare(basename(b)));
-  return byNumber.map((p) => {
-    const md = readFileSync(p, "utf8");
-    const [, num, name] = SPEC_FILE.exec(basename(p))!;
-    const d = getField(md, "Last verified") || "";
+  return specRows(specsDir).map(({ num, name, status, verified: d }) => {
     const age = /^\d{4}-\d{2}-\d{2}$/.test(d) ? ` (${Math.max(0, Math.round((Date.parse(today) - Date.parse(d)) / 864e5))} d ago)` : "";
     const verified = d ? `verified ${d}${age}` : "never verified";
-    return `${num}  ${(getField(md, "Status") || "?").padEnd(11)}  ${verified.padEnd(32)}  ${name}`;
+    return `${num}  ${status.padEnd(11)}  ${verified.padEnd(32)}  ${name}`;
   });
 }
 
@@ -106,15 +115,7 @@ export interface SpecChoice {
 
 /** One picker entry per spec, Refused/ included: `0001 · Agreed · login`. */
 export function specChoices(specsDir: string): SpecChoice[] {
-  return listSpecs(specsDir, true)
-    .sort((a, b) => basename(a).localeCompare(basename(b)))
-    .map((p): SpecChoice => {
-      const [, num, name] = SPEC_FILE.exec(basename(p))!;
-      const status = getField(readFileSync(p, "utf8"), "Status") || "?";
-      const dir = basename(dirname(p));
-      const folder = dir === "Implemented" || dir === "Refused" ? dir : "";
-      return { num, status, folder, label: `${num} · ${status} · ${name}`, arg: num };
-    });
+  return specRows(specsDir).map(({ num, name, status, folder }) => ({ num, status, folder, label: `${num} · ${status} · ${name}`, arg: num }));
 }
 
 export const REFUSED_BANNER = (date: string) =>

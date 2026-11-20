@@ -85,6 +85,8 @@ export default function specMode(pi: ExtensionAPI) {
     return s;
   }
 
+  const noSpec = (arg: string) => `No spec "${arg}" in ${settings.specsDir}/ or ${settings.specsDir}/Implemented/`;
+
   const localTemplate = (ctx: ExtensionContext) => join(specsAbs(ctx), "spec_template.md");
 
   function template(ctx: ExtensionContext): string {
@@ -211,7 +213,7 @@ export default function specMode(pi: ExtensionAPI) {
     let p: string | undefined;
     if (arg.trim()) {
       p = resolveSpec(specsAbs(ctx), arg);
-      if (!p) return notify(ctx, `No spec "${arg}" in ${settings.specsDir}/ or ${settings.specsDir}/Implemented/`, "warning");
+      if (!p) return notify(ctx, noSpec(arg), "warning");
       if (basename(dirname(p)) === "Implemented") return notify(ctx, `${rel(ctx, p)} is already implemented.`, "warning");
     } else {
       if (state.mode !== "spec") return notify(ctx, "Spec mode is not on: /spec agree works on the spec being written, /spec agree <spec> on an existing Draft one.", "warning");
@@ -247,7 +249,7 @@ export default function specMode(pi: ExtensionAPI) {
     if (!listSpecs(specsAbs(ctx)).length) return notify(ctx, `No specs in ${settings.specsDir}/ to verify.`), false;
     // A named spec is verified even if already verified today: the user asked for it.
     const one = arg && resolveSpec(specsAbs(ctx), arg);
-    if (arg && !one) return notify(ctx, `No spec "${arg}" to verify in ${settings.specsDir}/ or ${settings.specsDir}/Implemented/`, "warning"), false;
+    if (arg && !one) return notify(ctx, noSpec(arg), "warning"), false;
     const targets = one ? [one] : verifyQueue(specsAbs(ctx), today(), settings.verifyCount);
     if (!targets.length) return notify(ctx, `The ${settings.verifyCount} oldest specs were already verified today: nothing to do.`), false;
     if (state.mode === "off" && otherWorkflowActive(ctx))
@@ -261,7 +263,7 @@ export default function specMode(pi: ExtensionAPI) {
     if (!plan) return notify(ctx, "Implementing a spec needs plan mode: pi install npm:@narumitw/pi-plan-mode", "warning");
     if (!arg.trim()) return notify(ctx, "Which spec? /spec implement <number or name>", "warning");
     const p = resolveSpec(specsAbs(ctx), arg);
-    if (!p) return notify(ctx, `No spec "${arg}" in ${settings.specsDir}/ or ${settings.specsDir}/Implemented/`, "warning");
+    if (!p) return notify(ctx, noSpec(arg), "warning");
     // An extended spec in Implemented/ is Agreed again: the Status check alone decides.
     const status = getField(readFileSync(p, "utf8"), "Status");
     if (status !== "Agreed") return notify(ctx, `${rel(ctx, p)} is ${status ?? "not Agreed"}: agree it first (/spec agree).`, "warning");
