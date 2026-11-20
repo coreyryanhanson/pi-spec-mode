@@ -1,5 +1,5 @@
 // Pure helpers: no pi imports, so `node --test` can load them directly.
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 // `i`: on a case-insensitive disk (macOS, Windows) `x.MD` is the same file as `x.md`.
@@ -153,6 +153,31 @@ export function sweepRefused(specsDir: string, date: string): string[] {
 export function isInside(dir: string, cwd: string, p: string): boolean {
   const rel = relative(resolve(cwd, dir), resolve(cwd, p));
   return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+/** Why a settings value is refused, or undefined when it is valid. Shared by the settings files and `/spec settings`. */
+export function settingError(key: string, value: unknown, cwd: string): string | undefined {
+  switch (key) {
+    // The specs folder is the only place spec mode may write: never let a setting point it outside the project.
+    // A folder not created yet is fine (no spec written yet); an existing file is not.
+    case "specsDir":
+      return typeof value !== "string" || !isInside(".", cwd, value) || statSync(resolve(cwd, value), { throwIfNoEntry: false })?.isDirectory() === false
+        ? "specsDir must be a folder inside the project" : undefined;
+    case "language":
+      return typeof value !== "string" || !value.trim() ? "language must be a non-empty string" : undefined;
+    case "verifyCount":
+      return !Number.isInteger(value) || (value as number) < 1 ? "verifyCount must be a positive integer" : undefined;
+    case "renameSession":
+      return typeof value !== "boolean" ? "renameSession must be true or false" : undefined;
+  }
+  return `unknown setting ${key}`;
+}
+
+/** A settings file's text with one key set, other keys kept. Throws on a file that is not a JSON object rather than overwrite it. */
+export function withSetting(text: string | undefined, key: string, value: unknown): string {
+  const obj = text?.trim() ? JSON.parse(text) : {};
+  if (typeof obj !== "object" || obj === null || Array.isArray(obj)) throw new Error("not a JSON object");
+  return `${JSON.stringify({ ...obj, [key]: value }, null, 2)}\n`;
 }
 
 const NONE = /(?!)/;

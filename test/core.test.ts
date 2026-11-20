@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber,
-  refuseSpec, resolveSpec, restoreSpec, setField, specChoices, specSummary, specTable, sweepRefused, verifyQueue,
+  refuseSpec, resolveSpec, restoreSpec, setField, settingError, specChoices, specSummary, specTable, sweepRefused, verifyQueue, withSetting,
 } from "../src/core.ts";
 
 const template = readFileSync(new URL("../templates/spec_template.md", import.meta.url), "utf8");
@@ -143,4 +143,26 @@ test("specSummary: H1 title and the first line of Goal, capped", () => {
   assert.equal(specSummary("# 0003 Spec: Offline mode\n\n## Problem\n\nx\n"), "Offline mode");
   assert.equal(specSummary("## 2. Goal\n\n## 3. Non-goals\n"), "");
   assert.equal(specSummary(`# T\n## Goal\n${"x".repeat(300)}`).length, 200);
+});
+
+test("settingError accepts valid values and names the rule a bad one breaks", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "set-"));
+  writeFileSync(join(cwd, "file.md"), "");
+  assert.equal(settingError("specsDir", "doc/specs", cwd), undefined);
+  assert.match(settingError("specsDir", "../out", cwd)!, /inside the project/);
+  assert.match(settingError("specsDir", "file.md", cwd)!, /folder/);
+  assert.equal(settingError("language", "Français", cwd), undefined);
+  assert.match(settingError("language", "  ", cwd)!, /non-empty/);
+  assert.equal(settingError("verifyCount", 3, cwd), undefined);
+  assert.match(settingError("verifyCount", 0, cwd)!, /positive integer/);
+  assert.match(settingError("verifyCount", Number("two"), cwd)!, /positive integer/);
+  assert.match(settingError("renameSession", "yes", cwd)!, /true or false/);
+  assert.match(settingError("other", 1, cwd)!, /unknown setting/);
+});
+
+test("withSetting sets one key, keeps the others and refuses a file that is not a JSON object", () => {
+  assert.deepEqual(JSON.parse(withSetting('{ "language": "French" }', "verifyCount", 4)), { language: "French", verifyCount: 4 });
+  assert.deepEqual(JSON.parse(withSetting(undefined, "renameSession", true)), { renameSession: true });
+  assert.throws(() => withSetting("{ broken", "language", "French"));
+  assert.throws(() => withSetting("[1]", "language", "French"), /not a JSON object/);
 });

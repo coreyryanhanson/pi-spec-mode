@@ -688,6 +688,54 @@ test("/spec settings says which files exist and reloads a project file created l
   assert.match(h.notes.at(-1)!, /"specsDir": "doc\/specs"/);
 });
 
+test("/spec settings saves a picked value in the project file and keeps its other keys", async () => {
+  const h = harness();
+  h.ctx.isProjectTrusted = () => true;
+  const file = join(h.cwd, ".pi/pi-spec-mode.json");
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(file, '{ "language": "French" }');
+  await h.fire("session_start");
+  const picks = ["verifyCount: 2", "5", `this project (${file})`];
+  h.ctx.ui.select = async (_m: string, options: string[]) => (h.offered.push(options), picks.shift());
+  h.ctx.ui.input = async () => picks.shift();
+  await h.commands.spec.handler("settings", h.ctx);
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { language: "French", verifyCount: 5 });
+  assert.match(h.notes.at(-1)!, /verifyCount set to 5/);
+  assert.ok(h.offered.at(-1)!.includes("verifyCount: 5")); // the menu shows the new value
+});
+
+test("/spec settings refuses an invalid value and leaves a broken settings file untouched", async () => {
+  const h = harness();
+  h.ctx.isProjectTrusted = () => true;
+  const file = join(h.cwd, ".pi/pi-spec-mode.json");
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(file, "{ broken");
+  const picks = ["specsDir: \"specs\"", "../elsewhere", "language: \"English\"", "French", `this project (${file})`];
+  h.ctx.ui.select = async () => picks.shift();
+  h.ctx.ui.input = async () => picks.shift();
+  await h.commands.spec.handler("settings", h.ctx);
+  assert.ok(h.notes.some((n) => /specsDir must be a folder inside the project, not saved/.test(n)));
+  assert.match(h.notes.at(-1)!, /left unchanged/);
+  assert.equal(readFileSync(file, "utf8"), "{ broken");
+});
+
+test("/spec settings in an untrusted project saves to the global file", async () => {
+  const h = harness();
+  const agentDir = mkdtempSync(join(tmpdir(), "agent-"));
+  const prev = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    const picks = ["renameSession: false", "true"];
+    h.ctx.ui.select = async () => picks.shift();
+    await h.commands.spec.handler("settings", h.ctx);
+    assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "pi-spec-mode.json"), "utf8")), { renameSession: true });
+    assert.ok(!existsSync(join(h.cwd, ".pi")));
+  } finally {
+    if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = prev;
+  }
+});
+
 test("a non-string language setting falls back to English instead of reaching the contract", async () => {
   const h = harness();
   h.ctx.isProjectTrusted = () => true;

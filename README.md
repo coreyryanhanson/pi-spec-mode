@@ -34,7 +34,7 @@ pi -e ./                           # try a local checkout
 | `/spec implement <spec>` | Hand an `Agreed` spec to plan mode |
 | `/spec template` | Create `specs/spec_template.md`, adapted to the project by the agent (asks first) |
 | `/spec exit` | Leave spec mode |
-| `/spec settings` | Show the effective settings |
+| `/spec settings` | Show the effective settings and change them from a menu |
 
 While in spec mode the footer shows `✎ spec-mode` in blue (then `✎ spec-mode 0003 · Draft`); nothing when off. The agent can read the whole project, run only read-only shell commands, and write only Markdown files inside the specs folder. Before calling `spec_complete`, it checks the new spec against existing ones: it sees each spec's title and Goal sentence only, reads in full the `Agreed` and `Implemented` specs on the same subject, and asks about any contradicting rule. This keeps the context small but is not exhaustive: a conflicting rule in a spec whose title and goal look unrelated is missed (`/spec verify` remains the safety net). It asks decisions through `spec_question` and calls `spec_complete` when the spec is ready, which opens an **Agree / Keep discussing / Leave** menu.
 
@@ -83,7 +83,8 @@ asks first, because it starts a decision you own: the generic template is copied
 
 ## Settings
 
-`~/.pi/agent/pi-spec-mode.json`, overridden per project by `.pi/pi-spec-mode.json` (read only in trusted projects):
+`~/.pi/agent/pi-spec-mode.json`, overridden per project by `.pi/pi-spec-mode.json` (read only in trusted projects). Edit them by hand, or run `/spec settings`: pick a setting, type its value (empty keeps it), then pick the file it goes to (this project or all projects; an untrusted project can only use the global file). A value the rules below refuse is not saved, and a settings file that is not valid JSON is left unchanged.
+
 
 ```json
 {

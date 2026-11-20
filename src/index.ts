@@ -5,7 +5,7 @@ import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil
 import { Type } from "typebox";
 import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, listSpecs, missingSections,
-  nextSpecNumber, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, specChoices, type SpecChoice, specSummary, specTable, sweepRefused, today, verifyQueue,
+  nextSpecNumber, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, settingError, specChoices, type SpecChoice, specSummary, specTable, sweepRefused, today, verifyQueue, withSetting,
 } from "./core.ts";
 import { implementRequest, NORMAL_CONTRACT, specContract, templateRequest, verifyContract } from "./prompts.ts";
 
@@ -69,23 +69,12 @@ export default function specMode(pi: ExtensionAPI) {
         notify(ctx, `pi-spec-mode: ignoring ${f}: ${(e as Error).message}`, "warning");
       }
     }
-    // The specs folder is the only place spec mode may write: never let a setting point it outside the project.
-    // A folder not created yet is fine (no spec written yet); an existing file is not.
-    if (typeof s.specsDir !== "string" || !isInside(".", ctx.cwd, s.specsDir) || statSync(resolve(ctx.cwd, s.specsDir), { throwIfNoEntry: false })?.isDirectory() === false) {
-      notify(ctx, `pi-spec-mode: specsDir must be a folder inside the project, using "specs"`, "warning");
-      s.specsDir = "specs";
-    }
-    if (typeof s.language !== "string" || !s.language.trim()) {
-      notify(ctx, `pi-spec-mode: language must be a non-empty string, using "English"`, "warning");
-      s.language = "English";
-    }
-    if (!Number.isInteger(s.verifyCount) || s.verifyCount < 1) {
-      notify(ctx, `pi-spec-mode: verifyCount must be a positive integer, using 2`, "warning");
-      s.verifyCount = 2;
-    }
-    if (typeof s.renameSession !== "boolean") {
-      notify(ctx, `pi-spec-mode: renameSession must be true or false, using false`, "warning");
-      s.renameSession = false;
+    for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
+      const err = settingError(key, s[key], ctx.cwd);
+      if (err) {
+        notify(ctx, `pi-spec-mode: ${err}, using ${JSON.stringify(DEFAULT_SETTINGS[key])}`, "warning");
+        s = { ...s, [key]: DEFAULT_SETTINGS[key] };
+      }
     }
     return s;
   }
@@ -347,6 +336,45 @@ export default function specMode(pi: ExtensionAPI) {
     );
   }
 
+  /** `/spec settings` with a UI: pick a setting, type its value, pick the file it goes to; Escape leaves. */
+  async function editSettings(ctx: ExtensionContext) {
+    showSettings(ctx);
+    if (!ctx.hasUI) return;
+    const keys = Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[];
+    for (;;) {
+      const labels = keys.map((k) => `${k}: ${JSON.stringify(settings[k])}`);
+      const key = keys[labels.indexOf((await ctx.ui.select("pi-spec-mode settings", labels)) ?? "")];
+      if (!key) return;
+      const raw = typeof DEFAULT_SETTINGS[key] === "boolean"
+        ? await ctx.ui.select(key, ["true", "false"])
+        : await ctx.ui.input(key, String(settings[key]));
+      if (!raw?.trim()) continue; // an empty answer keeps the value
+      const value = key === "verifyCount" ? Number(raw) : key === "renameSession" ? raw === "true" : raw.trim();
+      const err = settingError(key, value, ctx.cwd);
+      if (err) {
+        notify(ctx, `pi-spec-mode: ${err}, not saved`, "warning");
+        continue;
+      }
+      const global = join(getAgentDir(), "pi-spec-mode.json");
+      const project = join(ctx.cwd, ".pi", "pi-spec-mode.json");
+      const where = ctx.isProjectTrusted()
+        ? await ctx.ui.select(`Save ${key} in`, [`this project (${project})`, `all projects (${global})`])
+        : `all projects (${global})`; // an untrusted project file would be ignored
+      if (!where) continue;
+      const file = where.startsWith("this") ? project : global;
+      try {
+        const text = withSetting(existsSync(file) ? readFileSync(file, "utf8") : undefined, key, value);
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, text);
+      } catch (e) {
+        notify(ctx, `pi-spec-mode: ${file} left unchanged: ${(e as Error).message}`, "warning");
+        continue;
+      }
+      settings = loadSettings(ctx);
+      notify(ctx, settings[key] === value ? `${key} set to ${JSON.stringify(value)} in ${file}` : `${key} saved in ${file}, but ${project} overrides it`);
+    }
+  }
+
   pi.on("session_start", async (_e, ctx) => restore(ctx));
   pi.on("session_tree", async (_e, ctx) => restore(ctx));
 
@@ -422,7 +450,7 @@ export default function specMode(pi: ExtensionAPI) {
         case "template":
           return idle ? createTemplate(ctx) : busy();
         case "settings":
-          return showSettings(ctx);
+          return editSettings(ctx);
         default: {
           if (state.mode === "spec") return pi.sendUserMessage(args, idle ? undefined : { deliverAs: "followUp" });
           if (!idle) return busy();
