@@ -22,6 +22,7 @@ interface Settings {
   language: string;
   verifyCount: number;
   renameSession: boolean;
+  renamePlanSession: boolean;
 }
 
 const STATE_ENTRY = "spec-mode";
@@ -35,7 +36,7 @@ const MENU_DETAIL: Record<string, string> = {
   start: "enter spec mode", verify: "check specs against the code", implement: "hand a spec to plan mode",
   restore: "a refused spec", template: "create the project template", exit: "leave spec mode",
 };
-const DEFAULT_SETTINGS: Settings = { specsDir: "specs", language: "English", verifyCount: 2, renameSession: false };
+const DEFAULT_SETTINGS: Settings = { specsDir: "specs", language: "English", verifyCount: 2, renameSession: false, renamePlanSession: false };
 /** Menu action → what to say when its picker has nothing to offer. */
 const PICKER_EMPTY: Record<string, string> = {
   implement: "No Agreed spec to implement: agree one first (/spec agree).",
@@ -264,6 +265,7 @@ export default function specMode(pi: ExtensionAPI) {
     if (!ctx.isIdle()) return notify(ctx, "The agent is running: wait or interrupt, then retry.", "warning");
     if (state.mode !== "off") exit(ctx, "Spec mode off — handing over to plan mode");
     const line = `/${plan.name} ${implementRequest(rel(ctx, p), settings.specsDir)}`;
+    if (settings.renamePlanSession) pi.setSessionName(`spec ${basename(p).slice(0, 4)} planning`);
     try {
       pi.sendUserMessage(line, { expandPromptTemplates: true });
     } catch (e) {
@@ -349,7 +351,7 @@ export default function specMode(pi: ExtensionAPI) {
         ? await ctx.ui.select(key, ["true", "false"])
         : await ctx.ui.input(key, String(settings[key]));
       if (!raw?.trim()) continue; // an empty answer keeps the value
-      const value = key === "verifyCount" ? Number(raw) : key === "renameSession" ? raw === "true" : raw.trim();
+      const value = key === "verifyCount" ? Number(raw) : typeof DEFAULT_SETTINGS[key] === "boolean" ? raw === "true" : raw.trim();
       const err = settingError(key, value, ctx.cwd);
       if (err) {
         notify(ctx, `pi-spec-mode: ${err}, not saved`, "warning");

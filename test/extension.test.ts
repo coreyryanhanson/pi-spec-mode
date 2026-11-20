@@ -491,6 +491,22 @@ test("implement: needs plan mode, an Agreed spec, then dispatches /plan", async 
   writeFileSync(join(h.cwd, "specs/Implemented/0002_spec_y.md"), "| Status | Agreed |\n");
   await h.commands.spec.handler("implement 2", h.ctx);
   assert.match(h.sent.user[1], /^\/plan Implement the agreed spec `specs\/Implemented\/0002_spec_y\.md`/);
+  assert.equal(h.sessionName(), undefined); // renamePlanSession is off by default
+});
+
+test("renamePlanSession names the session after the spec handed to plan mode, typed or picked", async () => {
+  const h = harness({ plan: true, picks: ["implement (hand a spec to plan mode)", "0002 · Agreed · y"] });
+  h.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "renamePlanSession": true }');
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_x.md"), "| Status | Agreed |\n");
+  writeFileSync(join(h.cwd, "specs/0002_spec_y.md"), "| Status | Agreed |\n");
+  await h.fire("session_start");
+  await h.commands.spec.handler("implement 1", h.ctx);
+  assert.equal(h.sessionName(), "spec 0001 planning");
+  await h.commands.spec.handler("", h.ctx);
+  assert.equal(h.sessionName(), "spec 0002 planning");
 });
 
 test("/spec menu runs the same commands as typing them", async () => {

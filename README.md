@@ -91,7 +91,8 @@ asks first, because it starts a decision you own: the generic template is copied
   "specsDir": "specs",
   "language": "English",
   "verifyCount": 2,
-  "renameSession": false
+  "renameSession": false,
+  "renamePlanSession": false
 }
 ```
 
@@ -102,6 +103,8 @@ asks first, because it starts a decision you own: the generic template is copied
 `verifyCount` is how many specs `/spec verify` checks per run.
 
 `renameSession`, when `true`, renames the session `spec NNNN creation` as soon as the agent creates spec `NNNN` in spec mode (the name `/resume` shows). Editing an existing spec does not rename it. Anything but `true` or `false` is ignored with a warning and `false` is used.
+
+`renamePlanSession`, when `true`, renames the session `spec NNNN planning` just before `/spec implement` (typed or picked from the `/spec` menu) hands spec `NNNN` to plan mode. Same rules as `renameSession`; off by default.
 
 ## Develop
 
