@@ -697,6 +697,20 @@ test("a non-string language setting falls back to English instead of reaching th
   assert.match(await h.prompt(), /Write the spec in English/);
 });
 
+test("a specsDir outside the project or on a file falls back to specs with a warning", async () => {
+  for (const specsDir of ["../..", "README.md"]) {
+    const h = harness();
+    h.ctx.isProjectTrusted = () => true;
+    mkdirSync(join(h.cwd, ".pi"));
+    writeFileSync(join(h.cwd, "README.md"), "# x\n");
+    writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), JSON.stringify({ specsDir }));
+    await h.fire("session_start");
+    assert.deepEqual(h.notes, ['pi-spec-mode: specsDir must be a folder inside the project, using "specs"'], specsDir);
+    await h.commands.spec.handler("list", h.ctx);
+    assert.match(h.notes.at(-1)!, /No spec in specs\//, specsDir);
+  }
+});
+
 test("agent setting an Agreed spec to Refused moves it instead of resetting it to Draft", async () => {
   const h = harness();
   await h.fire("session_start");

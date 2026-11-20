@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -69,7 +69,8 @@ export default function specMode(pi: ExtensionAPI) {
       }
     }
     // The specs folder is the only place spec mode may write: never let a setting point it outside the project.
-    if (typeof s.specsDir !== "string" || !isInside(".", ctx.cwd, s.specsDir)) {
+    // A folder not created yet is fine (no spec written yet); an existing file is not.
+    if (typeof s.specsDir !== "string" || !isInside(".", ctx.cwd, s.specsDir) || statSync(resolve(ctx.cwd, s.specsDir), { throwIfNoEntry: false })?.isDirectory() === false) {
       notify(ctx, `pi-spec-mode: specsDir must be a folder inside the project, using "specs"`, "warning");
       s.specsDir = "specs";
     }

@@ -20,6 +20,7 @@
 - A spec file that is a symbolic link is now ignored: a linked spec whose target said `Status | Refused` made session start write the `REFUSED` banner into the target, outside the specs folder, then move the link into `specs/Refused/` where it no longer resolved.
 - `/spec agree 9999` or `/spec verify 9999` (a number or spec file name that matches no spec, or a refused one) now answers `No spec "9999"`: it used to turn spec mode on and send `agree 9999` to the agent as a request.
 - During `/spec verify`, an `Agreed` spec the agent set to `Draft` itself is now treated like any changed `Agreed` spec: `Version` + 1, a notice, and the `Agree again` question at the end of the run. It used to stay `Draft` silently with the same `Version`. A spec whose only change is that status line stays `Agreed`.
+- A `specsDir` setting that points to an existing file (`"README.md"`) is ignored with a warning and `"specs"` is used, like a path outside the project: it used to make `/spec list` and the other commands fail with `ENOTDIR`.
 
 ## 0.0.2
 

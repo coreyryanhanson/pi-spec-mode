@@ -93,6 +93,8 @@ asks first, because it starts a decision you own: the generic template is copied
 }
 ```
 
+`specsDir` is the folder specs live in, relative to the project. A path outside the project, or an existing file, is ignored with a warning and `"specs"` is used.
+
 `language` is the language specs are written in, whatever the language of the conversation. Anything but a non-empty string is ignored with a warning and `"English"` is used.
 
 `verifyCount` is how many specs `/spec verify` checks per run.
