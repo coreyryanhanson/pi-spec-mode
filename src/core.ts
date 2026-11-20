@@ -90,7 +90,7 @@ export function specTable(specsDir: string, today: string): string[] {
     const md = readFileSync(p, "utf8");
     const [, num, name] = SPEC_FILE.exec(basename(p))!;
     const d = getField(md, "Last verified") || "";
-    const age = /^\d{4}-\d{2}-\d{2}$/.test(d) ? ` (${Math.round((Date.parse(today) - Date.parse(d)) / 864e5)} d ago)` : "";
+    const age = /^\d{4}-\d{2}-\d{2}$/.test(d) ? ` (${Math.max(0, Math.round((Date.parse(today) - Date.parse(d)) / 864e5))} d ago)` : "";
     const verified = d ? `verified ${d}${age}` : "never verified";
     return `${num}  ${(getField(md, "Status") || "?").padEnd(11)}  ${verified.padEnd(32)}  ${name}`;
   });

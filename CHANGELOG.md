@@ -21,6 +21,7 @@
 - `/spec agree 9999` or `/spec verify 9999` (a number or spec file name that matches no spec, or a refused one) now answers `No spec "9999"`: it used to turn spec mode on and send `agree 9999` to the agent as a request.
 - During `/spec verify`, an `Agreed` spec the agent set to `Draft` itself is now treated like any changed `Agreed` spec: `Version` + 1, a notice, and the `Agree again` question at the end of the run. It used to stay `Draft` silently with the same `Version`. A spec whose only change is that status line stays `Agreed`.
 - A `specsDir` setting that points to an existing file (`"README.md"`) is ignored with a warning and `"specs"` is used, like a path outside the project: it used to make `/spec list` and the other commands fail with `ENOTDIR`.
+- `/spec list` shows a `Last verified` date in the future (a typo such as `2027-01-01`) as `0 d ago` instead of a negative age.
 
 ## 0.0.2
 

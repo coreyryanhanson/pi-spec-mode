@@ -119,6 +119,11 @@ test("specTable lists every spec with status and verification age, Refused/ incl
   assert.deepEqual(specTable(specsDir({}), "2026-11-16"), []);
 });
 
+test("specTable shows a Last verified date in the future as 0 days ago, never a negative age", () => {
+  const rows = specTable(specsDir({ "0001_spec_a.md": spec("Agreed", "2027-01-01") }), "2026-11-20");
+  assert.match(rows[0], /verified 2027-01-01 \(0 d ago\)/);
+});
+
 test("specChoices: one picker entry per spec, Refused/ included, number as argument", () => {
   const dir = specsDir({ "0001_spec_login.md": spec("Agreed", ""), "Implemented/0002_spec_offline.md": spec("Implemented", "") });
   refuseSpec(dir, join(dir, "0001_spec_login.md"), "2026-11-12");
