@@ -140,6 +140,20 @@ test("tool policy: spec folder writable, everything else refused", async () => {
   assert.match(h.sent.custom.at(-1).content, /CONTRACT v1: NORMAL/);
 });
 
+test("a spec that is a symbolic link is not listed, and session start does not write through it", async () => {
+  const h = harness();
+  mkdirSync(join(h.cwd, "specs"));
+  const target = FILLED.replace("| Status | Draft |", "| Status | Refused |");
+  writeFileSync(join(h.cwd, "notes.md"), target);
+  symlinkSync("../notes.md", join(h.cwd, "specs/0007_spec_x.md"));
+  await h.fire("session_start");
+  assert.equal(readFileSync(join(h.cwd, "notes.md"), "utf8"), target);
+  assert.ok(existsSync(join(h.cwd, "specs/0007_spec_x.md")));
+  assert.ok(!existsSync(join(h.cwd, "specs/Refused")));
+  await h.commands.spec.handler("list", h.ctx);
+  assert.doesNotMatch(h.notes.at(-1)!, /0007/);
+});
+
 test("write → complete → menu Agree flips Status and leaves spec mode", async () => {
   const h = harness({ picks: ["Agree"] });
   await h.fire("session_start");

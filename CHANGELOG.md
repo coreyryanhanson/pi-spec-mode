@@ -15,6 +15,10 @@
 
 - `/spec template` no longer just copies the generic template: it warns you first, then the agent quickly analyses the project (type, stack, domain) and rewrites `specs/spec_template.md` for it, and asks you to reread the result — `/spec agree` checks every spec against that file. Answer `No` and you are offered the plain copy instead. The agent may change the template only during this run.
 
+### Fixed
+
+- A spec file that is a symbolic link is now ignored: a linked spec whose target said `Status | Refused` made session start write the `REFUSED` banner into the target, outside the specs folder, then move the link into `specs/Refused/` where it no longer resolved.
+
 ## 0.0.2
 
 ### Added

@@ -1,5 +1,5 @@
 // Pure helpers: no pi imports, so `node --test` can load them directly.
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 // `i`: on a case-insensitive disk (macOS, Windows) `x.MD` is the same file as `x.md`.
@@ -10,7 +10,8 @@ export function listSpecs(specsDir: string, withRefused = false): string[] {
   const out: string[] = [];
   for (const dir of [specsDir, join(specsDir, "Implemented"), ...(withRefused ? [join(specsDir, "Refused")] : [])]) {
     if (!existsSync(dir)) continue;
-    for (const f of readdirSync(dir)) if (SPEC_FILE.test(f)) out.push(join(dir, f));
+    // A linked spec is skipped: reading, refusing or moving it would write to the link's target, outside the specs folder.
+    for (const f of readdirSync(dir)) if (SPEC_FILE.test(f) && !lstatSync(join(dir, f)).isSymbolicLink()) out.push(join(dir, f));
   }
   return out.sort();
 }

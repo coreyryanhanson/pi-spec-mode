@@ -108,6 +108,7 @@ npm run typecheck
 ## Known limitations
 
 - **Conflict check depends on section names.** The existing specs are summarised by their H1 title and the first line of a section named `Goal` (with or without a number, e.g. `## 2. Goal`). If your template renames it (`## Objectif`, `## Purpose`…), each spec is listed by its title only, and conflicts are detected less reliably. Keep a heading named `Goal` in your template to get the full summary.
+- **A spec that is a symbolic link is ignored.** `/spec list`, `/spec agree`, `/spec verify`, `/spec refuse` and the sweep of refused specs skip it: acting on it would write to the link's target, outside the specs folder. Keep the spec file itself in the specs folder.
 - **Conflict check is a model instruction, not code.** The agent is asked to read the related specs and report contradictions; nothing enforces that it does. `/spec verify` remains the safety net.
 
 ## Changelog
