@@ -11,6 +11,7 @@ interface SpecContext {
   template: string;
   specs: string[]; // "path — Status — Title: goal"
   current?: string;
+  yolo: boolean;
 }
 
 /** Obsolete specs describe behaviour that is gone: reading one would bring it back. */
@@ -21,10 +22,12 @@ export function specContract(c: SpecContext): string {
   return `${SPEC_MARKER}
 You are in spec mode. A spec says what a feature is and how it behaves; it never describes code: no files, classes, data structures or test plan.
 
-Restrictions (enforced, calls outside them are refused):
+${c.yolo
+  ? `Tool restrictions are lifted (the yolo setting is on): any tool may be used and writes are not limited to the specs folder. Still write only the spec: no code, tests or implementation plans.`
+  : `Restrictions (enforced, calls outside them are refused):
 - Read anything in the project; bash only for read-only commands.
 - Create and edit only Markdown files (.md) inside \`${c.specsDir}/\`, with the write and edit tools.
-- Never write code, tests or implementation plans.
+- Never write code, tests or implementation plans.`}
 
 Writing the spec:
 - New file: \`${c.specsDir}/${c.next}_spec_<feature>.md\`, <feature> in snake_case, H1 \`# ${c.next} Spec: <Feature name>\`. Never overwrite an existing spec: if one exists for this feature, ask whether to extend it or create a new one. A Draft spec for the same feature is continued, not duplicated.
@@ -55,10 +58,12 @@ export function verifyRequest(targets: string[]): string {
   return `Verify ${targets.map((t) => `\`${t}\``).join(", ")}, and no other spec. The spec-mode VERIFY contract in the system prompt applies to this run: it replaces any earlier NORMAL or SPEC contract.`;
 }
 
-export function verifyContract(specsDir: string, today: string, targets: string[]): string {
+export function verifyContract(specsDir: string, today: string, targets: string[], yolo = false): string {
   return `${VERIFY_MARKER}
 Verify these specs, in this order: ${targets.map((t) => `\`${t}\``).join(", ")}.
-Restrictions (enforced): read anything; bash read-only; write and edit only .md files inside \`${specsDir}/\`.
+${yolo
+  ? `Tool restrictions are lifted (the yolo setting is on): any tool may be used. Still verify only: the writes this run makes are the spec files it checks.`
+  : `Restrictions (enforced): read anything; bash read-only; write and edit only .md files inside \`${specsDir}/\`.`}
 
 For each spec, read it in full, then check one claim at a time (every numbered rule, every Feedback item, every number stated as behaviour). What a claim is checked against depends on the spec's Status:
 - Implemented: against the code. The header too: Implemented while rules no longer match = rotted. A claim you cannot check counts as unverified, not passing.

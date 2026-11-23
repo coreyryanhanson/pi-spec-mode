@@ -216,6 +216,7 @@ export function settingError(key: string, value: unknown, cwd: string): string |
       return !Number.isInteger(value) || (value as number) < 1 ? "verifyCount must be a positive integer" : undefined;
     case "renameSession":
     case "renamePlanSession":
+    case "yolo":
       return typeof value !== "boolean" ? `${key} must be true or false` : undefined;
   }
   return `unknown setting ${key}`;

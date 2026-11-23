@@ -143,6 +143,125 @@ test("tool policy: spec folder writable, everything else refused", async () => {
   assert.match(h.sent.custom.at(-1).content, /CONTRACT v1: NORMAL/);
 });
 
+test("yolo: the calls spec mode would block pass through", async () => {
+  const h = harness();
+  h.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "yolo": true }');
+  await h.fire("session_start");
+  await h.commands.spec.handler("start", h.ctx);
+  assert.match(h.notes[0], /yolo/); // the banner no longer promises a limited write scope
+  const call = (toolName: string, input: any) => h.fire("tool_call", { toolName, toolCallId: "t", input });
+  // The bash allowlist is off: writes through the shell run.
+  assert.equal(await call("bash", { command: "echo x > specs/a.md" }), undefined);
+  // Writes outside the specs folder, non-Markdown files and dash names are all allowed.
+  assert.equal(await call("write", { path: "src/x.ts", content: "" }), undefined);
+  assert.equal(await call("write", { path: "specs/notes.txt", content: "" }), undefined);
+  assert.equal(await call("write", { path: "specs/-o.md", content: "" }), undefined);
+  // The template stays protected under yolo: /spec agree measures every spec against it.
+  assert.equal((await call("write", { path: "specs/spec_template.md", content: "" }))?.block, true);
+  // The template stays protected under yolo, and 1.1.0 refuses /spec template in spec mode: no run allows a rewrite.
+  await h.commands.spec.handler("template", h.ctx);
+  assert.match(h.notes.at(-1)!, /not available in spec mode/);
+  assert.equal((await call("write", { path: "specs/spec_template.md", content: "x" }))?.block, true);
+  // A symlink under specs/ no longer stops a write.
+  mkdirSync(join(h.cwd, "specs"), { recursive: true });
+  mkdirSync(join(h.cwd, "src"));
+  symlinkSync("../src", join(h.cwd, "specs/notes"));
+  assert.equal(await call("write", { path: "specs/notes/a.md", content: "" }), undefined);
+  // The catch-all is off: any other tool runs.
+  assert.equal(await call("some_mcp_tool", {}), undefined);
+});
+
+test("without yolo the same calls stay blocked", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  await h.commands.spec.handler("start", h.ctx);
+  assert.doesNotMatch(h.notes[0], /yolo/);
+  const call = (toolName: string, input: any) => h.fire("tool_call", { toolName, toolCallId: "t", input });
+  assert.equal((await call("bash", { command: "echo x > specs/a.md" }))?.block, true);
+  assert.equal((await call("write", { path: "src/x.ts", content: "" }))?.block, true);
+  assert.equal((await call("some_mcp_tool", {}))?.block, true);
+});
+
+test("yolo keeps the verify restore rules for spec-file writes", async () => {
+  const h = harness();
+  h.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "yolo": true }');
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  const a = join(h.cwd, "specs/0001_spec_a.md");
+  writeFileSync(a, AGREED);
+  await h.commands.spec.handler("verify 1", h.ctx); // 1.1.0: a bare verify opens the picker; naming the spec starts the run directly
+  // An ungated edit that sets an Agreed spec to Draft: the before-content was still recorded, so spec mode puts it back.
+  const ev = { toolName: "edit", toolCallId: "e1", input: { path: "specs/0001_spec_a.md" }, isError: false };
+  await h.fire("tool_call", ev);
+  writeFileSync(a, `${FILLED}\nA rule nobody agreed.\n`);
+  await h.fire("tool_result", ev);
+  const md = readFileSync(a, "utf8");
+  assert.match(md, /\| Status \| Draft \|/);
+  assert.match(md, /\| Version \| 2 \|/); // only possible when the edit saw the Agreed before-content
+  assert.match(h.notes.at(-1)!, /changed: back to Draft/);
+});
+
+test("yolo resolves an @ mention path before checking: the template stays guarded and spec writes keep the restore rules", async () => {
+  const h = harness();
+  h.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "yolo": true }');
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  // pi strips the `@` before writing, so the guard must judge the path it will actually write.
+  await h.commands.spec.handler("start", h.ctx);
+  const call = (input: any) => h.fire("tool_call", { toolName: "write", toolCallId: "t", input });
+  assert.equal((await call({ path: "@specs/spec_template.md", content: "" }))?.block, true);
+  // An edit through an `@` path still gets its before-content recorded: the restore rules see it.
+  await h.commands.spec.handler("exit", h.ctx);
+  const a = join(h.cwd, "specs/0001_spec_a.md");
+  writeFileSync(a, AGREED);
+  await h.commands.spec.handler("verify 1", h.ctx); // 1.1.0: a bare verify opens the picker; naming the spec starts the run directly
+  const ev = { toolName: "edit", toolCallId: "e1", input: { path: "@specs/0001_spec_a.md" }, isError: false };
+  await h.fire("tool_call", ev);
+  writeFileSync(a, `${FILLED}\nA rule nobody agreed.\n`);
+  await h.fire("tool_result", ev);
+  assert.match(readFileSync(a, "utf8"), /\| Version \| 2 \|/); // only possible when the edit saw the Agreed before-content
+});
+
+test("the prompt contract matches the yolo setting", async () => {
+  // Default: the contract still claims the restrictions are enforced.
+  const off = harness();
+  await off.fire("session_start");
+  mkdirSync(join(off.cwd, "specs"));
+  writeFileSync(join(off.cwd, "specs/0001_spec_a.md"), FILLED);
+  await off.commands.spec.handler("start", off.ctx);
+  assert.match(await off.prompt(), /Restrictions \(enforced, calls outside them are refused\)/);
+  await off.commands.spec.handler("exit", off.ctx);
+  await off.commands.spec.handler("verify 1", off.ctx); // 1.1.0: a bare verify opens the picker; naming the spec starts the run directly
+  assert.match(await off.prompt(), /Restrictions \(enforced\): read anything/);
+
+  // With yolo the contract must not claim enforcement the gate no longer applies.
+  const on = harness();
+  on.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(on.cwd, ".pi"));
+  writeFileSync(join(on.cwd, ".pi/pi-spec-mode.json"), '{ "yolo": true }');
+  await on.fire("session_start");
+  mkdirSync(join(on.cwd, "specs"));
+  writeFileSync(join(on.cwd, "specs/0001_spec_a.md"), FILLED);
+  await on.commands.spec.handler("start", on.ctx);
+  const yoloContract = await on.prompt();
+  assert.doesNotMatch(yoloContract, /enforced/);
+  assert.match(yoloContract, /yolo setting is on/);
+  assert.match(yoloContract, /no code, tests or implementation plans/); // the mode's job, not a tool restriction
+  await on.commands.spec.handler("exit", on.ctx);
+  await on.commands.spec.handler("verify 1", on.ctx); // 1.1.0: a bare verify opens the picker; naming the spec starts the run directly
+  const yoloVerify = await on.prompt();
+  assert.doesNotMatch(yoloVerify, /enforced/);
+  assert.match(yoloVerify, /yolo setting is on/);
+  // The status rules survive yolo: the contract still says spec mode puts an edited Agreed spec back to Draft.
+  assert.match(yoloVerify, /back to Draft/);
+});
+
 test("a spec that is a symbolic link is not listed, and session start does not write through it", async () => {
   const h = harness();
   mkdirSync(join(h.cwd, "specs"));
@@ -930,6 +1049,32 @@ test("the session is not renamed by default, and a non-boolean renameSession fal
     await agentWrite(h, "specs/0001_spec_a.md", FILLED, "w1");
     assert.equal(h.sessionName(), undefined);
   }
+});
+
+test("a non-boolean yolo falls back to false and the tool gate stays on", async () => {
+  const h = harness();
+  h.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "yolo": "yes" }');
+  await h.fire("session_start");
+  assert.match(h.notes.at(-1)!, /yolo must be true or false/);
+  await h.commands.spec.handler("start", h.ctx);
+  assert.doesNotMatch(h.notes[1], /yolo/); // the banner still promises a limited write scope
+  const call = (toolName: string, input: any) => h.fire("tool_call", { toolName, toolCallId: "t", input });
+  assert.equal((await call("write", { path: "src/x.ts", content: "" }))?.block, true);
+  assert.equal((await call("bash", { command: "echo x > specs/a.md" }))?.block, true);
+});
+
+test("an untrusted project's yolo setting is ignored and the tool gate stays on", async () => {
+  const h = harness();
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "yolo": true }');
+  await h.fire("session_start");
+  await h.commands.spec.handler("start", h.ctx);
+  assert.doesNotMatch(h.notes[0], /yolo/); // the project file is only read in a trusted project
+  const call = (toolName: string, input: any) => h.fire("tool_call", { toolName, toolCallId: "t", input });
+  assert.equal((await call("write", { path: "src/x.ts", content: "" }))?.block, true);
+  assert.equal((await call("bash", { command: "echo x > specs/a.md" }))?.block, true);
 });
 
 test("agent setting an Agreed spec to Refused moves it instead of resetting it to Draft", async () => {

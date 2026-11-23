@@ -215,6 +215,9 @@ test("settingError accepts valid values and names the rule a bad one breaks", ()
   assert.match(settingError("verifyCount", Number("two"), cwd)!, /positive integer/);
   assert.match(settingError("renameSession", "yes", cwd)!, /true or false/);
   assert.match(settingError("renamePlanSession", 1, cwd)!, /renamePlanSession must be true or false/);
+  assert.equal(settingError("yolo", true, cwd), undefined);
+  assert.equal(settingError("yolo", false, cwd), undefined);
+  assert.match(settingError("yolo", "yes", cwd)!, /yolo must be true or false/);
   assert.match(settingError("other", 1, cwd)!, /unknown setting/);
 });
 
