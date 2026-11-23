@@ -866,6 +866,32 @@ test("only /spec agree makes a spec Agreed: an agent write that sets Agreed goes
   assert.deepEqual(h.sent.user, []);
 });
 
+test("only an Agreed spec found built by verify becomes Implemented: an agent write that sets Implemented goes back", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  const IMPL = FILLED.replace("| Status | Draft |", "| Status | Implemented |");
+  const write = async (id: string, path: string, next: string) => {
+    const ev = { toolName: id.startsWith("w") ? "write" : "edit", toolCallId: id, input: { path }, isError: false };
+    await h.fire("tool_call", ev);
+    writeFileSync(join(h.cwd, path), next);
+    await h.fire("tool_result", ev);
+    return readFileSync(join(h.cwd, path), "utf8");
+  };
+  // Spec mode: a new spec written as Implemented, then a Draft edited to Implemented.
+  await h.commands.spec.handler("start", h.ctx);
+  assert.match(await write("w1", "specs/0001_spec_a.md", IMPL), /\| Status \| Draft \|/);
+  assert.match(h.notes.at(-1)!, /only an Agreed spec found built/);
+  assert.match(await write("e2", "specs/0001_spec_a.md", IMPL), /\| Status \| Draft \|/);
+  // An Implemented spec edited in spec mode keeps its status: it is not newly set.
+  writeFileSync(join(h.cwd, "specs/0002_spec_b.md"), IMPL);
+  assert.match(await write("e3", "specs/0002_spec_b.md", `${IMPL}\nA new rule.\n`), /\| Status \| Implemented \|/);
+  await h.commands.spec.handler("exit", h.ctx);
+  // Verify run: a Draft spec set to Implemented stays Draft.
+  await h.commands.spec.handler("verify 1", h.ctx);
+  assert.match(await write("e4", "specs/0001_spec_a.md", IMPL), /\| Status \| Draft \|/);
+});
+
 test("verify run: stamping an Agreed spec keeps it Agreed, changing it or self-agreeing does not", async () => {
   const h = harness();
   await h.fire("session_start");

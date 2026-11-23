@@ -621,8 +621,10 @@ export default function specMode(pi: ExtensionAPI) {
     }
     // A verify run stamps `Last verified` on an Agreed spec: that alone is not a change.
     const unstamped = (s: string) => setField(s, "Last verified", "");
-    // Rule 1: only /spec agree makes a spec Agreed.
-    const selfAgreed = isAgreed && !wasAgreed;
+    // Rule 1: only /spec agree makes a spec Agreed, and only an Agreed spec a verify run finds built becomes Implemented
+    // (plan mode, the other way there, runs with spec mode off).
+    const selfImplemented = getField(md, "Status") === "Implemented" && getField(before, "Status") !== "Implemented" && !(state.mode === "verify" && wasAgreed);
+    const selfAgreed = (isAgreed && !wasAgreed) || selfImplemented;
     // Rule 2: a changed Agreed spec must be agreed again. A verify run may still move it to another status (Implemented).
     const changed = wasAgreed && (state.mode === "spec" || (isAgreed && unstamped(before) !== unstamped(md)));
     if (selfAgreed || changed) {
@@ -633,7 +635,8 @@ export default function specMode(pi: ExtensionAPI) {
       writeFileSync(abs, md);
       // Only a real change retires an Agreed spec; a run that just stamps `Last verified` keeps it Agreed and is not offered.
       if (changed && state.mode === "verify") save(ctx, { ...state, drafts: [...new Set([...(state.drafts ?? []), p])] });
-      notify(ctx, selfAgreed ? `${basename(p).slice(0, 4)}: only /spec agree can set a spec to Agreed, back to ${getField(md, "Status")}` : `${basename(p).slice(0, 4)} changed: back to Draft, agree it again when ready`);
+      const rule = selfImplemented ? "only an Agreed spec found built by /spec verify becomes Implemented" : "only /spec agree can set a spec to Agreed";
+      notify(ctx, selfAgreed ? `${basename(p).slice(0, 4)}: ${rule}, back to ${getField(md, "Status")}` : `${basename(p).slice(0, 4)} changed: back to Draft, agree it again when ready`);
     }
     // Only the session that creates the spec is renamed: editing an existing one is not its creation.
     if (state.mode === "spec" && !before && settings.renameSession) pi.setSessionName(`spec ${basename(p).slice(0, 4)} creation`);
