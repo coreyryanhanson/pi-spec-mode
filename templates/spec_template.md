@@ -12,7 +12,7 @@
 
 | | |
 |---|---|
-| Status | Draft / Agreed / Implemented / Refused |
+| Status | Draft / Agreed / Implemented / Refused / Obsolete |
 | Owner | <who decides> |
 | Version | <1> |
 | Creation date | <YYYY-MM-DD> |

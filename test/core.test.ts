@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { test } from "node:test";
 import {
-  emptySections, getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber,
-  refuseSpec, resolveSpec, restoreSpec, setField, specChoices, specSummary, specTable, sweepRefused, verifyQueue,
+  emptySections, getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber, obsoleteSpec, obsoleteSpecs, pickerMove,
+  purgeSpecs, refuseSpec, resolveSpec, restoreSpec, setField, settingError, specChoices, specSummary, specTable, sweepArchived, verifyQueue, withSetting,
 } from "../src/core.ts";
 
 const template = readFileSync(new URL("../templates/spec_template.md", import.meta.url), "utf8");
@@ -23,6 +23,31 @@ test("numbering counts Implemented/ and never reuses", () => {
   const dir = specsDir({ "0001_spec_a.md": "", "Implemented/0004_spec_b.md": "", "spec_template.md": "" });
   assert.equal(nextSpecNumber(dir), "0005");
   assert.equal(nextSpecNumber(specsDir({})), "0001");
+});
+
+test("purge deletes the obsolete specs but their numbers stay taken, across purges", () => {
+  const dir = specsDir({ "0001_spec_a.md": "" });
+  mkdirSync(join(dir, "Obsolete"));
+  writeFileSync(join(dir, "Obsolete/0002_spec_b.md"), "");
+  purgeSpecs(dir, obsoleteSpecs(dir));
+  assert.ok(!existsSync(join(dir, "Obsolete/0002_spec_b.md")));
+  assert.equal(nextSpecNumber(dir), "0003");
+  purgeSpecs(dir, []); // a later purge with nothing above it keeps the number
+  assert.equal(nextSpecNumber(dir), "0003");
+});
+
+test("purge refuses a linked number file and deletes nothing; a malformed one is ignored", () => {
+  const dir = specsDir({ "0001_spec_a.md": "" });
+  mkdirSync(join(dir, "Obsolete"));
+  writeFileSync(join(dir, "Obsolete/0002_spec_b.md"), "");
+  const outside = join(mkdtempSync(join(tmpdir(), "out-")), "x");
+  writeFileSync(outside, "keep");
+  symlinkSync(outside, join(dir, ".last_purged"));
+  assert.throws(() => purgeSpecs(dir, obsoleteSpecs(dir)), /symbolic link/);
+  assert.equal(readFileSync(outside, "utf8"), "keep");
+  assert.ok(existsSync(join(dir, "Obsolete/0002_spec_b.md")));
+  const bad = specsDir({ "0001_spec_a.md": "", ".last_purged": "lots" });
+  assert.equal(nextSpecNumber(bad), "0002");
 });
 
 test("resolveSpec accepts every documented form", () => {
@@ -84,7 +109,7 @@ test("bash: readers pass, anything that writes is refused", () => {
     "sort \"-o\" out a", "sort \\-o out a", "sort ${X:--o} out", "sort $'\\x2do' out", "echo -o; sort $_ out", "sort x$IFS-o out", "sort {-o,out}",
     "git log --ext-diff", "git -c core.pager=sh log", "rg -z x", "read x", "date -s 12:00",
     "echo \"'\" $(touch pwned) \"'\"", "echo \\' $(touch pwned) \\'", "ls # '\necho $(touch pwned) # '", "echo hi2>&1x", "echo payload2>&1/../escaped.txt",
-    "sort *", "find . * \\;", "cat ?x", "cat [-a]x", "sort \"\"*", "sort \"$@\"*", "sort $1", "constructor x", "constructor -x", "toString"])
+    "echo `id`", "cat `echo a.md`", "sort *", "find . * \\;", "cat ?x", "cat [-a]x", "sort \"\"*", "sort \"$@\"*", "sort $1", "constructor x", "constructor -x", "toString"])
     assert.ok(!isReadOnlyCommand(c), c);
 });
 
@@ -105,8 +130,40 @@ test("refused spec: restore undoes it, a hand-set Refused status is swept", () =
   const back = restoreSpec(dir, refuseSpec(dir, join(dir, "0001_spec_a.md"), "2026-11-12"));
   assert.equal(readFileSync(back, "utf8"), spec("Draft", ""));
   assert.ok(resolveSpec(dir, "a"));
-  assert.deepEqual(sweepRefused(dir, "2026-11-12").map((p) => p.split("/").slice(-2).join("/")), ["Refused/0002_spec_b.md"]);
+  assert.deepEqual(sweepArchived(dir, "2026-11-12").map((p) => p.split("/").slice(-2).join("/")), ["Refused/0002_spec_b.md"]);
   assert.ok(resolveSpec(dir, "b", true)?.includes("Refused"));
+});
+
+test("obsolete spec: banner names the replacement, status, moved, skipped by verify and resolve, still numbered", () => {
+  const dir = specsDir({ "Implemented/0001_spec_a.md": spec("Implemented", ""), "0002_spec_b.md": spec("Agreed", "2026-01-01") });
+  const dest = obsoleteSpec(dir, join(dir, "Implemented/0001_spec_a.md"), "2026-11-23", "0002_spec_b.md");
+  assert.ok(dest.endsWith("Obsolete/0001_spec_a.md") && !existsSync(join(dir, "Implemented/0001_spec_a.md")));
+  const md = readFileSync(dest, "utf8");
+  assert.match(md, /^> \*\*OBSOLETE on 2026-11-23, replaced by 0002_spec_b\.md: ignore this spec\.\*\*/);
+  assert.equal(getField(md, "Status"), "Obsolete");
+  assert.deepEqual(verifyQueue(dir, "2026-11-23").map((p) => basename(p)), ["0002_spec_b.md"]);
+  assert.equal(resolveSpec(dir, "a"), undefined);
+  assert.ok(resolveSpec(dir, "a", true)?.includes("Obsolete"));
+  assert.equal(nextSpecNumber(dir), "0003");
+  // A second spec of the same name never overwrites the archived one.
+  writeFileSync(join(dir, "Implemented/0001_spec_a.md"), spec("Implemented", ""));
+  assert.throws(() => obsoleteSpec(dir, join(dir, "Implemented/0001_spec_a.md"), "2026-11-23"), /already exists/);
+});
+
+test("obsolete spec: without a replacement the banner says none, a hand-set Obsolete status is swept", () => {
+  const dir = specsDir({ "Implemented/0001_spec_a.md": spec("Obsolete", "") });
+  const [dest] = sweepArchived(dir, "2026-11-23");
+  assert.ok(dest.endsWith("Obsolete/0001_spec_a.md"));
+  assert.match(readFileSync(dest, "utf8"), /^> \*\*OBSOLETE on 2026-11-23: ignore/);
+});
+
+test("obsoleteSpecs lists only spec files in Obsolete/, never a link or another file", () => {
+  const dir = specsDir({ "0002_spec_live.md": spec("Draft", "") });
+  mkdirSync(join(dir, "Obsolete"));
+  writeFileSync(join(dir, "Obsolete/0001_spec_old.md"), spec("Obsolete", ""));
+  writeFileSync(join(dir, "Obsolete/notes.md"), "");
+  symlinkSync(join(dir, "0002_spec_live.md"), join(dir, "Obsolete/0003_spec_link.md"));
+  assert.deepEqual(obsoleteSpecs(dir).map((p) => basename(p)), ["0001_spec_old.md"]);
 });
 
 test("specTable lists every spec with status and verification age, Refused/ included", () => {
@@ -117,6 +174,11 @@ test("specTable lists every spec with status and verification age, Refused/ incl
   assert.match(rows[0], /^0001 +Refused +verified 2026-11-06 \(10 d ago\) +login$/);
   assert.match(rows[1], /^0002 +Implemented +never verified +offline$/);
   assert.deepEqual(specTable(specsDir({}), "2026-11-16"), []);
+});
+
+test("specTable shows a Last verified date in the future as 0 days ago, never a negative age", () => {
+  const rows = specTable(specsDir({ "0001_spec_a.md": spec("Agreed", "2027-01-01") }), "2026-11-20");
+  assert.match(rows[0], /verified 2027-01-01 \(0 d ago\)/);
 });
 
 test("specChoices: one picker entry per spec, Refused/ included, number as argument", () => {
@@ -138,4 +200,35 @@ test("specSummary: H1 title and the first line of Goal, capped", () => {
   assert.equal(specSummary("# 0003 Spec: Offline mode\n\n## Problem\n\nx\n"), "Offline mode");
   assert.equal(specSummary("## 2. Goal\n\n## 3. Non-goals\n"), "");
   assert.equal(specSummary(`# T\n## Goal\n${"x".repeat(300)}`).length, 200);
+});
+
+test("settingError accepts valid values and names the rule a bad one breaks", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "set-"));
+  writeFileSync(join(cwd, "file.md"), "");
+  assert.equal(settingError("specsDir", "doc/specs", cwd), undefined);
+  assert.match(settingError("specsDir", "../out", cwd)!, /inside the project/);
+  assert.match(settingError("specsDir", "file.md", cwd)!, /folder/);
+  assert.equal(settingError("language", "Français", cwd), undefined);
+  assert.match(settingError("language", "  ", cwd)!, /non-empty/);
+  assert.equal(settingError("verifyCount", 3, cwd), undefined);
+  assert.match(settingError("verifyCount", 0, cwd)!, /positive integer/);
+  assert.match(settingError("verifyCount", Number("two"), cwd)!, /positive integer/);
+  assert.match(settingError("renameSession", "yes", cwd)!, /true or false/);
+  assert.match(settingError("renamePlanSession", 1, cwd)!, /renamePlanSession must be true or false/);
+  assert.match(settingError("other", 1, cwd)!, /unknown setting/);
+});
+
+test("withSetting sets one key, keeps the others and refuses a file that is not a JSON object", () => {
+  assert.deepEqual(JSON.parse(withSetting('{ "language": "French" }', "verifyCount", 4)), { language: "French", verifyCount: 4 });
+  assert.deepEqual(JSON.parse(withSetting(undefined, "renameSession", true)), { renameSession: true });
+  assert.throws(() => withSetting("{ broken", "language", "French"));
+  assert.throws(() => withSetting("[1]", "language", "French"), /not a JSON object/);
+});
+
+test("pickerMove: up on the first spec wraps to the last, down on the last wraps to the first", () => {
+  assert.equal(pickerMove(0, 4, "up"), 3);
+  assert.equal(pickerMove(2, 4, "up"), 1);
+  assert.equal(pickerMove(1, 4, "down"), 2);
+  assert.equal(pickerMove(3, 4, "down"), 0);
+  assert.equal(pickerMove(0, 1, "up"), 0);
 });

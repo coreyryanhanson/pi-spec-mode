@@ -13,6 +13,10 @@ interface SpecContext {
   current?: string;
 }
 
+/** Obsolete specs describe behaviour that is gone: reading one would bring it back. */
+const obsoleteRule = (specsDir: string) =>
+  `Never read, cite or extend specs in \`${specsDir}/Obsolete/\`: they describe behaviour the product no longer has. When one says it was replaced, the replacement is the one that applies.`;
+
 export function specContract(c: SpecContext): string {
   return `${SPEC_MARKER}
 You are in spec mode. A spec says what a feature is and how it behaves; it never describes code: no files, classes, data structures or test plan.
@@ -35,6 +39,7 @@ Writing the spec:
 - When the spec is complete and every question is answered, call spec_complete with its path, then stop.
 ${c.current ? `\nCurrent spec: \`${c.current}\` — re-read it before every change; the user may edit it by hand.\n` : ""}
 Specs in \`${c.specsDir}/Refused/\` were refused by the user: ignore them, never use or extend them.
+${obsoleteRule(c.specsDir)}
 
 Existing specs:
 ${c.specs.length ? c.specs.map((s) => `- ${s}`).join("\n") : "- none"}
@@ -57,14 +62,27 @@ Act:
 - Code genuinely broken (missing, crashing, contradicting its own rules): report it, do not touch the spec.
 - A rule itself must change (new or dropped behaviour, different design): ask the user first with spec_question.
 - Undecidable: report it.
-Status only moves forward: Agreed whose rules all run → Implemented. Never set Agreed or Draft: a spec fixed to match the code keeps its status.
-Never invent, delete or renumber a rule; never rewrite a section for style.
+Status only moves forward: Agreed whose rules all run → Implemented. Never set Agreed or Draft: a spec fixed to match the code keeps its status. An Agreed spec you edit is put back to Draft by spec mode itself, and the user is asked whether to agree it again once the run ends; never set Agreed yourself.
+Never invent, delete or renumber a rule; never rewrite a section for style. Never set Status to Refused or Obsolete: only the user does.
+${obsoleteRule(specsDir)}
 
 Stamp: only on a spec fully checked, set \`| Last verified | ${today} |\`. Bump Version only when the content changed.
 
 Report, one short block per spec, nothing else: path, status before → after, each edit with its section, each unverified claim or code problem with one line of why.`;
 }
 
+/** Sent by `/spec template`: the agent adapts the copied generic template to the project. */
+export function templateRequest(templatePath: string, specsDir: string): string {
+  return `Create the project spec template \`${templatePath}\`. It holds a copy of the generic template: read it, then rewrite it for this project.
+
+1. Quick analysis first, a few reads only: what the project does, its stack, its domain, its main user-facing surfaces — README, manifest (package.json, pyproject.toml, Cargo.toml…), top-level folders, and the specs already in \`${specsDir}/\`. Reading the code is not needed.
+2. Rewrite \`${templatePath}\` for this project: keep the header rows (Status, Owner, Version, Creation date, Implementation date, Last verified), a section named \`Goal\` and the numbered rules; rename the other sections and rewrite their hints in the project's own domain (a game: feel and balance numbers; an API: contracts, error codes, pagination; a mobile app: screens, offline states). Delete what never applies and add what this project always needs. A spec says what the feature does, never how the code works.
+3. Then tell the user what you changed and why, and that they must reread the whole template before the first spec: \`/spec agree\` checks every spec against it, so a wrong rule there makes every spec wrong.
+
+Write no file but \`${templatePath}\`.`;
+}
+
 export function implementRequest(specPath: string, specsDir: string): string {
-  return `Implement the agreed spec \`${specPath}\`. Read it and the code its rules land on, then plan the implementation; the plan is the spec implemented, do not restate or rewrite the spec. The plan must end by moving the spec to \`${specsDir}/Implemented/\` and setting in its header \`| Status | Implemented |\`, \`| Implementation date | <day of implementation> |\` and \`| Last verified | <same day> |\`; Creation date is never touched.`;
+  return `Implement the agreed spec \`${specPath}\`. Read it and the code its rules land on, then plan the implementation; the plan is the spec implemented, do not restate or rewrite the spec. The plan must end by moving the spec to \`${specsDir}/Implemented/\` and setting in its header \`| Status | Implemented |\`, \`| Implementation date | <day of implementation> |\` and \`| Last verified | <same day> |\`; Creation date is never touched.
+${obsoleteRule(specsDir)}`;
 }

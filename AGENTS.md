@@ -45,7 +45,7 @@ The security model is the product. An edit that relaxes one of these is a bug, n
 
 - In spec mode the agent writes **only Markdown files inside the specs folder**; no symlink traversal (`isInside`, `lstat` checks), no write outside `specs/`.
 - The shell allowlist stays a **read-only** allowlist: unknown command → refused, glob/redirect/`-o file` style argument → refused. Prefer refusing to guessing.
-- The file pattern `NNNN_spec_<feature>.md`, the `Status` / `Last verified` header fields, and the `specs/Implemented/` + `specs/Refused/` moves keep working; hand-edited specs stay readable.
+- The file pattern `NNNN_spec_<feature>.md`, the `Status` / `Last verified` header fields, and the `specs/Implemented/` + `specs/Refused/` + `specs/Obsolete/` moves keep working; hand-edited specs stay readable.
 - `/spec verify` never changes a spec's status; `spec_complete` stays the only way to close a spec.
 - Settings keys and defaults stay backward compatible (`specsDir`, `language`, `verifyCount`); an unknown/absent settings file must not throw.
 - A spec describes behaviour, never code; don't hand-edit `specs/Implemented/`, it is a record.
