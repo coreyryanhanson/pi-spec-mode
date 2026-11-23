@@ -7,7 +7,7 @@ import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, listSpecs, missingSections,
   nextSpecNumber, obsoleteSpec, obsoleteSpecs, pickerMove, purgeSpecs, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, settingError, specChoices, type SpecChoice, specSummary, specTable, sweepArchived, today, verifyQueue, withSetting,
 } from "./core.ts";
-import { implementRequest, NORMAL_CONTRACT, specContract, templateRequest, verifyContract } from "./prompts.ts";
+import { implementRequest, NORMAL_CONTRACT, specContract, templateRequest, verifyContract, verifyRequest } from "./prompts.ts";
 
 type Mode = "off" | "spec" | "verify";
 interface State {
@@ -520,7 +520,7 @@ export default function specMode(pi: ExtensionAPI) {
           return idle ? agree(ctx, rest) : busy();
         case "verify":
           if (!idle) return busy();
-          if (startVerify(ctx, rest)) pi.sendUserMessage("Verify the specs.");
+          if (startVerify(ctx, rest)) pi.sendUserMessage(verifyRequest(state.targets ?? []));
           return;
         case "implement":
           return implement(ctx, rest);

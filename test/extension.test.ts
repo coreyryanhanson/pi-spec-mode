@@ -247,7 +247,8 @@ test("verify run: picks the two oldest, uses its contract, returns to previous m
   for (const [f, d] of [["0001_spec_a.md", "2026-05-01"], ["0002_spec_b.md", ""], ["Implemented/0003_spec_c.md", "2026-01-01"]])
     writeFileSync(join(h.cwd, "specs", f), `| Status | Agreed |\n| Last verified | ${d} |\n`);
   await h.commands.spec.handler("verify", h.ctx);
-  assert.deepEqual(h.sent.user, ["Verify the specs."]);
+  assert.equal(h.sent.user.length, 1);
+  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/Implemented\/0003_spec_c\.md` against the code, and no other spec\./);
   assert.equal(h.status(), "✎ spec-mode verify");
   const c = await h.prompt();
   assert.match(c, /VERIFY/);
@@ -263,7 +264,11 @@ test("/spec verify <spec> checks only that spec, even if verified today", async 
   for (const [f, d] of [["0001_spec_a.md", ""], ["Implemented/0002_spec_b.md", "2026-11-16"]])
     writeFileSync(join(h.cwd, "specs", f), `| Status | Agreed |\n| Last verified | ${d} |\n`);
   await h.commands.spec.handler("verify 2", h.ctx);
-  assert.deepEqual(h.sent.user, ["Verify the specs."]);
+  assert.equal(h.sent.user.length, 1);
+  // The request itself names the spec and the contract: a generic "Verify the specs." after a NORMAL contract read as "verify everything, normal mode".
+  assert.match(h.sent.user[0], /^Verify `specs\/Implemented\/0002_spec_b\.md` against the code, and no other spec\./);
+  assert.match(h.sent.user[0], /VERIFY contract[\s\S]*replaces any earlier NORMAL/);
+  assert.doesNotMatch(h.sent.user[0], /0001/);
   assert.match(await h.prompt(), /in this order: `specs\/Implemented\/0002_spec_b\.md`\./);
   await h.fire("agent_settled", { aborted: false });
   // Not a spec name: still a request.

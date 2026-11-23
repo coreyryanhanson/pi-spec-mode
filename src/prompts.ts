@@ -50,6 +50,11 @@ ${c.template}
 \`\`\``;
 }
 
+/** The message that starts a verify run: it names the specs, so the request cannot read as "verify everything" or as normal mode. */
+export function verifyRequest(targets: string[]): string {
+  return `Verify ${targets.map((t) => `\`${t}\``).join(", ")} against the code, and no other spec. The spec-mode VERIFY contract in the system prompt applies to this run: it replaces any earlier NORMAL or SPEC contract.`;
+}
+
 export function verifyContract(specsDir: string, today: string, targets: string[]): string {
   return `${VERIFY_MARKER}
 Verify these specs against the code, in this order: ${targets.map((t) => `\`${t}\``).join(", ")}.

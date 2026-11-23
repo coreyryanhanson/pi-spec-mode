@@ -2,6 +2,10 @@
 
 ## unreleased
 
+### Fixed
+
+- `/spec verify` and `/spec verify <spec>` sent the generic message "Verify the specs.": after a `/spec exit`, the agent read it as a normal-mode request and did not know which spec to check. The message now names the specs of the run and says the VERIFY contract applies.
+
 ### Changed
 
 - `/spec implement`, `/spec agree`, `/spec refuse`, `/spec restore` and `/spec obsolete` typed without a spec open the same spec picker as the `/spec` menu, where they used to stop on "Which spec?". Typing the spec (`/spec implement 0003`) works as before, `agree` and `refuse` still act on the spec in progress, and without an interactive UI the command still asks for the spec.
