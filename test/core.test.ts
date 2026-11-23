@@ -5,7 +5,7 @@ import { basename, join } from "node:path";
 import { test } from "node:test";
 import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber, obsoleteSpec, obsoleteSpecs, pickerMove,
-  refuseSpec, resolveSpec, restoreSpec, setField, settingError, specChoices, specSummary, specTable, sweepArchived, verifyQueue, withSetting,
+  purgeSpecs, refuseSpec, resolveSpec, restoreSpec, setField, settingError, specChoices, specSummary, specTable, sweepArchived, verifyQueue, withSetting,
 } from "../src/core.ts";
 
 const template = readFileSync(new URL("../templates/spec_template.md", import.meta.url), "utf8");
@@ -23,6 +23,31 @@ test("numbering counts Implemented/ and never reuses", () => {
   const dir = specsDir({ "0001_spec_a.md": "", "Implemented/0004_spec_b.md": "", "spec_template.md": "" });
   assert.equal(nextSpecNumber(dir), "0005");
   assert.equal(nextSpecNumber(specsDir({})), "0001");
+});
+
+test("purge deletes the obsolete specs but their numbers stay taken, across purges", () => {
+  const dir = specsDir({ "0001_spec_a.md": "" });
+  mkdirSync(join(dir, "Obsolete"));
+  writeFileSync(join(dir, "Obsolete/0002_spec_b.md"), "");
+  purgeSpecs(dir, obsoleteSpecs(dir));
+  assert.ok(!existsSync(join(dir, "Obsolete/0002_spec_b.md")));
+  assert.equal(nextSpecNumber(dir), "0003");
+  purgeSpecs(dir, []); // a later purge with nothing above it keeps the number
+  assert.equal(nextSpecNumber(dir), "0003");
+});
+
+test("purge refuses a linked number file and deletes nothing; a malformed one is ignored", () => {
+  const dir = specsDir({ "0001_spec_a.md": "" });
+  mkdirSync(join(dir, "Obsolete"));
+  writeFileSync(join(dir, "Obsolete/0002_spec_b.md"), "");
+  const outside = join(mkdtempSync(join(tmpdir(), "out-")), "x");
+  writeFileSync(outside, "keep");
+  symlinkSync(outside, join(dir, ".last_purged"));
+  assert.throws(() => purgeSpecs(dir, obsoleteSpecs(dir)), /symbolic link/);
+  assert.equal(readFileSync(outside, "utf8"), "keep");
+  assert.ok(existsSync(join(dir, "Obsolete/0002_spec_b.md")));
+  const bad = specsDir({ "0001_spec_a.md": "", ".last_purged": "lots" });
+  assert.equal(nextSpecNumber(bad), "0002");
 });
 
 test("resolveSpec accepts every documented form", () => {

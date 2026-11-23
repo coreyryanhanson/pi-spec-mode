@@ -1,5 +1,5 @@
 // Pure helpers: no pi imports, so `node --test` can load them directly.
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 // `i`: on a case-insensitive disk (macOS, Windows) `x.MD` is the same file as `x.md`.
@@ -17,8 +17,28 @@ export function listSpecs(specsDir: string, withArchived = false): string[] {
 }
 
 export function nextSpecNumber(specsDir: string): string {
-  const max = listSpecs(specsDir, true).reduce((m, p) => Math.max(m, Number(basename(p).slice(0, 4))), 0);
+  const max = listSpecs(specsDir, true).reduce((m, p) => Math.max(m, Number(basename(p).slice(0, 4))), lastPurged(specsDir));
   return String(max + 1).padStart(4, "0");
+}
+
+/** Where `/spec purge` records the highest number it deleted: the files are gone, the number must stay taken. */
+const PURGED = ".last_purged";
+
+function lastPurged(specsDir: string): number {
+  const f = join(specsDir, PURGED);
+  if (!existsSync(f) || lstatSync(f).isSymbolicLink()) return 0;
+  const n = readFileSync(f, "utf8").trim();
+  return /^\d{4}$/.test(n) ? Number(n) : 0;
+}
+
+/** Deletes the given specs (from obsoleteSpecs), recording their highest number first: deleted, a number is still never reused. */
+export function purgeSpecs(specsDir: string, files: string[]): void {
+  const f = join(specsDir, PURGED);
+  // Written by the extension, not the agent, but a link shipped by a cloned repo would still carry the write outside the specs folder.
+  if (lstatSync(f, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`${f} is a symbolic link`);
+  const max = files.reduce((m, p) => Math.max(m, Number(basename(p).slice(0, 4))), lastPurged(specsDir));
+  writeFileSync(f, `${String(max).padStart(4, "0")}\n`);
+  for (const p of files) unlinkSync(p);
 }
 
 /** Accepts `NNNN`, `NNNN_spec_xxx.md`, `spec_xxx.md`, `xxx`. */

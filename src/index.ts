@@ -1,11 +1,11 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ExtensionAPI, type ExtensionContext, ExtensionSelectorComponent, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, listSpecs, missingSections,
-  nextSpecNumber, obsoleteSpec, obsoleteSpecs, pickerMove, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, settingError, specChoices, type SpecChoice, specSummary, specTable, sweepArchived, today, verifyQueue, withSetting,
+  nextSpecNumber, obsoleteSpec, obsoleteSpecs, pickerMove, purgeSpecs, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, settingError, specChoices, type SpecChoice, specSummary, specTable, sweepArchived, today, verifyQueue, withSetting,
 } from "./core.ts";
 import { implementRequest, NORMAL_CONTRACT, specContract, templateRequest, verifyContract } from "./prompts.ts";
 
@@ -354,7 +354,7 @@ export default function specMode(pi: ExtensionAPI) {
     const ok = await ctx.ui.confirm(`Delete ${files.length} obsolete spec(s)?`, `${files.map((f) => rel(ctx, f)).join("\n")}\n\nThis cannot be undone.`);
     if (!ok) return notify(ctx, "Nothing deleted.");
     try {
-      for (const f of files) unlinkSync(f);
+      purgeSpecs(specsAbs(ctx), files);
     } catch (e) {
       return notify(ctx, `Could not delete every obsolete spec: ${(e as Error).message}`, "error");
     }
