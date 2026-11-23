@@ -412,7 +412,7 @@ test("/spec agree <spec> on another spec keeps the one in progress in spec mode"
   assert.deepEqual(h.sent.custom, []); // spec mode never stopped: no NORMAL contract
 });
 
-test("refusing the spec in progress leaves spec mode, refusing another one keeps it", async () => {
+test("in spec mode only the spec in progress can be refused", async () => {
   const h = harness();
   await h.fire("session_start");
   await h.commands.spec.handler("start", h.ctx);
@@ -421,7 +421,8 @@ test("refusing the spec in progress leaves spec mode, refusing another one keeps
   writeFileSync(join(h.cwd, "specs/0002_spec_b.md"), FILLED);
   await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0002_spec_b.md" }, isError: false });
   await h.commands.spec.handler("refuse 1", h.ctx);
-  assert.ok(existsSync(join(h.cwd, "specs/Refused/0001_spec_a.md")));
+  assert.ok(existsSync(join(h.cwd, "specs/0001_spec_a.md")));
+  assert.match(h.notes.at(-1)!, /only the spec in progress can be refused/);
   assert.equal(h.status(), "✎ spec-mode 0002 · Draft");
   await h.commands.spec.handler("refuse", h.ctx);
   assert.ok(existsSync(join(h.cwd, "specs/Refused/0002_spec_b.md")));
@@ -589,17 +590,15 @@ test("/spec template copies the generic template when the adaptation is declined
   assert.match(h.notes.at(-1)!, /by hand/);
 });
 
-test("the agent may rewrite the template during the /spec template run only", async () => {
+test("spec mode never lets the agent rewrite the template, /spec template runs outside it", async () => {
   const h = harness();
   await h.fire("session_start");
   await h.commands.spec.handler("start", h.ctx);
   const call = (id: string) => h.fire("tool_call", { toolName: "write", toolCallId: id, input: { path: "specs/spec_template.md", content: "x" } });
   assert.equal((await call("t0"))?.block, true);
   await h.commands.spec.handler("template", h.ctx);
-  assert.equal(await call("t1"), undefined);
-  await h.fire("agent_settled");
-  assert.match(h.notes.at(-1)!, /Reread specs\/spec_template\.md/);
-  assert.equal((await call("t2"))?.block, true);
+  assert.match(h.notes.at(-1)!, /not available in spec mode/);
+  assert.equal((await call("t1"))?.block, true);
 });
 
 test("/spec template refuses while the agent runs, and copies without asking without UI", async () => {
@@ -632,7 +631,32 @@ test("commands refuse what the current state does not allow", async () => {
   assert.match(h.notes.at(-1)!, /already on/);
   await h.commands.spec.handler("agree", h.ctx);
   assert.match(h.notes.at(-1)!, /No Draft spec to agree/);
-  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["refuse", "list", "template", "exit", "settings"]);
+  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["list", "exit"]);
+});
+
+test("spec mode refuses the commands that manage other specs or the setup", async () => {
+  const h = harness({ plan: true, picks: [] });
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs/Refused"), { recursive: true });
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), "| Status | Agreed |\n");
+  writeFileSync(join(h.cwd, "specs/Refused/0002_spec_b.md"), "| Status | Refused |\n");
+  await h.commands.spec.handler("start", h.ctx);
+  for (const cmd of ["implement 1", "implement", "restore 2", "obsolete 1", "purge", "template", "settings"]) {
+    await h.commands.spec.handler(cmd, h.ctx);
+    assert.match(h.notes.at(-1)!, /not available in spec mode: \/spec exit first/, cmd);
+  }
+  await h.commands.spec.handler("refuse", h.ctx); // nothing written yet: no spec in progress to refuse
+  assert.match(h.notes.at(-1)!, /only the spec in progress/);
+  assert.equal(h.offered.length, 0); // no picker opened
+  assert.deepEqual(h.sent.user, []);
+  assert.ok(existsSync(join(h.cwd, "specs/Refused/0002_spec_b.md")));
+  assert.ok(!existsSync(join(h.cwd, "specs/spec_template.md")));
+  assert.equal(h.status(), "✎ spec-mode");
+  writeFileSync(join(h.cwd, "specs/0003_spec_c.md"), FILLED);
+  await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0003_spec_c.md" }, isError: false });
+  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["agree", "refuse", "list", "exit"]);
+  await h.commands.spec.handler("refuse 3", h.ctx); // naming the spec in progress is fine
+  assert.ok(existsSync(join(h.cwd, "specs/Refused/0003_spec_c.md")));
 });
 
 test("/spec menu shows the same words as the completion, in every state", async () => {

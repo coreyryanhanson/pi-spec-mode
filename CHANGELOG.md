@@ -5,6 +5,7 @@
 ### Changed
 
 - `/spec implement`, `/spec agree`, `/spec refuse`, `/spec restore` and `/spec obsolete` typed without a spec open the same spec picker as the `/spec` menu, where they used to stop on "Which spec?". Typing the spec (`/spec implement 0003`) works as before, `agree` and `refuse` still act on the spec in progress, and without an interactive UI the command still asks for the spec.
+- Spec mode is about the spec in progress: its `/spec` menu and completion only offer `list` and `exit`, plus `agree` and `refuse` once the spec is written, and both act on that spec. `/spec implement`, `restore`, `obsolete`, `purge`, `template`, `settings` and `/spec refuse <another spec>` are refused in spec mode with a hint to `/spec exit` first. `/spec agree <spec>` still agrees another Draft spec.
 
 ## 1.0.0
 

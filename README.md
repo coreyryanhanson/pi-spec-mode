@@ -46,6 +46,7 @@ Commands that take a spec accept its number (`/spec agree 0003`) or file name. T
 - It asks you decisions through `spec_question`, and calls `spec_complete` when the spec is ready: you then pick **Agree**, **Keep discussing** or **Leave**.
 - Before that, it checks the new spec against the existing ones (titles and goals, plus a full read of related `Agreed` / `Implemented` specs) and asks about any contradiction.
 - It cannot agree a spec or mark one `Implemented` itself; that stays your call.
+- The `/spec` menu only offers `list` and `exit`, plus `agree` and `refuse` for the spec in progress once it is written. `implement`, `restore`, `obsolete`, `purge`, `template`, `settings` and refusing another spec are refused until `/spec exit`.
 
 ### Spec lifecycle
 

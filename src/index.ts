@@ -52,7 +52,7 @@ export default function specMode(pi: ExtensionAPI) {
   let settings = DEFAULT_SETTINGS;
   let session: object | undefined;
   let completeRequested = false;
-  let templateRun = false; // the agent may rewrite specs/spec_template.md during an explicit `/spec template` run
+  let templateRun = false; // an explicit `/spec template` run: reminds the user to reread the result when it ends
   const beforeEdit = new Map<string, string>(); // toolCallId of a write/edit in the specs folder → the file's content before it ("" for a new file)
 
   const specsAbs = (ctx: ExtensionContext) => resolve(ctx.cwd, settings.specsDir);
@@ -441,7 +441,8 @@ export default function specMode(pi: ExtensionAPI) {
   /** Subcommands the current state accepts, in menu order: the menu and the completion offer the same list. */
   function commands(): string[] {
     if (state.mode === "off") return ["start", "list", "agree", "verify", "implement", "refuse", "restore", "obsolete", "purge", "template", "settings"];
-    if (state.mode === "spec") return [...(state.spec ? ["agree"] : []), "refuse", "list", "template", "exit", "settings"];
+    // Spec mode works on the spec being written: managing the other specs or the setup waits for /spec exit.
+    if (state.mode === "spec") return [...(state.spec ? ["agree", "refuse"] : []), "list", "exit"];
     return ["list", "exit", "settings"];
   }
 
@@ -461,6 +462,15 @@ export default function specMode(pi: ExtensionAPI) {
       // that matches nothing is too, so a typo gets "No spec" instead of starting spec mode.
       const namesSpec = ["verify", "agree"].includes(sub) && rest !== "" && (/^\d{1,4}$|^\d{4}_spec_.+\.md$/i.test(rest) || !!resolveSpec(specsAbs(ctx), rest));
       const isRequest = rest !== "" && !namesSpec && ["start", "list", "exit", "off", "agree", "verify", "purge", "template", "settings"].includes(sub);
+
+      // In spec mode, refuse only applies to the spec in progress; the management commands wait for /spec exit.
+      if (state.mode === "spec" && !isRequest) {
+        const current = state.spec && resolve(ctx.cwd, state.spec);
+        const other = sub === "refuse" && (!current || (rest !== "" && resolveSpec(specsAbs(ctx), rest) !== current));
+        if (other) return notify(ctx, "In spec mode only the spec in progress can be refused: /spec exit first.", "warning");
+        if (["implement", "restore", "obsolete", "purge", "template", "settings"].includes(sub))
+          return notify(ctx, `/spec ${sub} is not available in spec mode: /spec exit first.`, "warning");
+      }
 
       // Without a spec in progress, agree and refuse need one picked, like implement and restore.
       const asksSpec = (s: string) => ["agree", "refuse", "implement", "restore", "obsolete"].includes(s) && !((s === "agree" || s === "refuse") && state.spec);
@@ -593,9 +603,9 @@ export default function specMode(pi: ExtensionAPI) {
       if (relative(specsAbs(ctx), abs).split(/[\\/]/).some((s) => s.startsWith("-")))
         return { block: true, reason: `Spec mode: file and folder names cannot start with "-".` };
       // /spec agree checks a spec against the template: the agent must not be able to weaken it. Lower-cased: macOS and Windows ignore case.
-      // The one exception is the run `/spec template` starts, which exists to rewrite it.
-      if (abs.toLowerCase() === localTemplate(ctx).toLowerCase() && !templateRun)
-        return { block: true, reason: `Spec mode: ${rel(ctx, abs)} is the user's template and cannot be changed in spec mode. Run /spec template to have it adapted, or edit it yourself.` };
+      // `/spec template` runs outside spec mode, so no exception is needed here.
+      if (abs.toLowerCase() === localTemplate(ctx).toLowerCase())
+        return { block: true, reason: `Spec mode: ${rel(ctx, abs)} is the user's template and cannot be changed in spec mode. Run /spec template outside spec mode to have it adapted, or edit it yourself.` };
       // pi rewrites `@x`, `~/x`, `file://…` and (on Windows) `/c/x` before writing: give it the absolute path that was just checked.
       event.input.path = abs;
       beforeEdit.set(event.toolCallId, existsSync(abs) ? readFileSync(abs, "utf8") : "");
