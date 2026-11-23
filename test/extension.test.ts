@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { test } from "node:test";
 import specMode from "../src/index.ts";
+import { today } from "../src/core.ts";
 
 type Handler = (event: any, ctx: any) => any;
 
@@ -241,12 +242,14 @@ test("plan mode active blocks spec mode; spec mode answers plan mode's mutex", a
 });
 
 test("verify run: picks the two oldest, uses its contract, returns to previous mode", async () => {
-  const h = harness();
+  const h = harness({ picks: ["▶ verify 2 selected"] });
   await h.fire("session_start");
   mkdirSync(join(h.cwd, "specs/Implemented"), { recursive: true });
   for (const [f, d] of [["0001_spec_a.md", "2026-05-01"], ["0002_spec_b.md", ""], ["Implemented/0003_spec_c.md", "2026-01-01"]])
     writeFileSync(join(h.cwd, "specs", f), `| Status | Agreed |\n| Last verified | ${d} |\n`);
   await h.commands.spec.handler("verify", h.ctx);
+  // The picker ticks the two oldest from the start: Enter alone keeps the old /spec verify.
+  assert.deepEqual(h.offered[0], ["▶ verify 2 selected", "[ ] 0001 · Agreed · a", "[x] 0002 · Agreed · b", "[x] 0003 · Agreed · c"]);
   assert.equal(h.sent.user.length, 1);
   assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/Implemented\/0003_spec_c\.md` against the code, and no other spec\./);
   assert.equal(h.status(), "✎ spec-mode verify");
@@ -630,7 +633,7 @@ test("commands refuse what the current state does not allow", async () => {
   assert.match(h.notes.at(-1)!, /not on/);
   await h.commands.spec.handler("agree", h.ctx); // no spec named, none in progress: the picker has nothing to offer
   assert.match(h.notes.at(-1)!, /No Draft spec to agree/);
-  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["start", "list", "agree", "verify", "implement", "refuse", "restore", "obsolete", "purge", "template", "settings"]);
+  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["start", "list", "agree", "verify", "verify_oldest", "implement", "refuse", "restore", "obsolete", "purge", "template", "settings"]);
   await h.commands.spec.handler("start", h.ctx);
   await h.commands.spec.handler("start", h.ctx);
   assert.match(h.notes.at(-1)!, /already on/);
@@ -646,7 +649,7 @@ test("spec mode refuses the commands that manage other specs or the setup", asyn
   writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), "| Status | Agreed |\n");
   writeFileSync(join(h.cwd, "specs/Refused/0002_spec_b.md"), "| Status | Refused |\n");
   await h.commands.spec.handler("start", h.ctx);
-  for (const cmd of ["implement 1", "implement", "restore 2", "obsolete 1", "purge", "template", "settings"]) {
+  for (const cmd of ["verify_oldest", "implement 1", "implement", "restore 2", "obsolete 1", "purge", "template", "settings"]) {
     await h.commands.spec.handler(cmd, h.ctx);
     assert.match(h.notes.at(-1)!, /not available in spec mode: \/spec exit first/, cmd);
   }
@@ -659,7 +662,7 @@ test("spec mode refuses the commands that manage other specs or the setup", asyn
   assert.equal(h.status(), "✎ spec-mode");
   writeFileSync(join(h.cwd, "specs/0003_spec_c.md"), FILLED);
   await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0003_spec_c.md" }, isError: false });
-  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["agree", "refuse", "list", "exit"]);
+  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["agree", "verify", "refuse", "list", "exit"]);
   await h.commands.spec.handler("refuse 3", h.ctx); // naming the spec in progress is fine
   assert.ok(existsSync(join(h.cwd, "specs/Refused/0003_spec_c.md")));
 });
@@ -1005,7 +1008,7 @@ test("only an Agreed spec found built by verify becomes Implemented: an agent wr
 });
 
 test("verify run: stamping an Agreed spec keeps it Agreed, changing it or self-agreeing does not", async () => {
-  const h = harness();
+  const h = harness({ picks: ["▶ verify 2 selected"] });
   await h.fire("session_start");
   mkdirSync(join(h.cwd, "specs"));
   const AGREED = FILLED.replace("| Status | Draft |", "| Status | Agreed |");
@@ -1042,7 +1045,7 @@ test("verify run: stamping an Agreed spec keeps it Agreed, changing it or self-a
 });
 
 test("verify run: an Agreed spec the agent sets to Draft itself is handled like any changed Agreed spec", async () => {
-  const h = harness({ picks: ["Keep Draft"] });
+  const h = harness({ picks: ["▶ verify 2 selected", "Keep Draft"] });
   await h.fire("session_start");
   mkdirSync(join(h.cwd, "specs"));
   const a = join(h.cwd, "specs/0001_spec_a.md");
@@ -1166,10 +1169,107 @@ test("spec, verify and implement prompts forbid reading obsolete specs", async (
   await h.commands.spec.handler("start", h.ctx);
   assert.match(await h.prompt(), /Never read, cite or extend specs in `specs\/Obsolete\/`/);
   await h.commands.spec.handler("exit", h.ctx);
-  await h.commands.spec.handler("verify", h.ctx);
+  await h.commands.spec.handler("verify 1 2", h.ctx);
   const verify = await h.prompt();
   assert.match(verify, /Never read, cite or extend specs in `specs\/Obsolete\/`/);
   assert.match(verify, /Never set Status to Refused or Obsolete/);
   const { implementRequest } = await import("../src/prompts.ts");
   assert.match(implementRequest("specs/0001_spec_a.md", "specs"), /Never read, cite or extend specs in `specs\/Obsolete\/`/);
+});
+
+test("/spec verify names several specs, and refuses the run when one does not exist", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs/Implemented"), { recursive: true });
+  for (const f of ["0001_spec_a.md", "0002_spec_b.md", "Implemented/0003_spec_c.md"])
+    writeFileSync(join(h.cwd, "specs", f), `| Status | Agreed |\n| Last verified | ${today()} |\n`);
+  await h.commands.spec.handler("verify 3 99", h.ctx);
+  assert.match(h.notes.at(-1)!, /No spec "99"/);
+  assert.deepEqual(h.sent.user, []);
+  assert.equal(h.status(), undefined);
+  await h.commands.spec.handler("verify 3 0001_spec_a.md 3", h.ctx); // verified today, named: checked anyway, once each, in the typed order
+  assert.equal(h.offered.length, 0);
+  assert.match(h.sent.user[0], /^Verify `specs\/Implemented\/0003_spec_c\.md`, `specs\/0001_spec_a\.md` against the code/);
+  assert.match(await h.prompt(), /in this order: `specs\/Implemented\/0003_spec_c\.md`, `specs\/0001_spec_a\.md`\./);
+});
+
+test("/spec verify picker: Enter ticks or unticks a spec, the first line starts, Esc or nothing ticked verifies nothing", async () => {
+  const setup = async (picks: string[]) => {
+    const h = harness({ picks });
+    await h.fire("session_start");
+    mkdirSync(join(h.cwd, "specs/Refused"), { recursive: true });
+    writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), "| Status | Agreed |\n| Last verified | 2026-01-01 |\n");
+    writeFileSync(join(h.cwd, "specs/0002_spec_b.md"), "| Status | Draft |\n");
+    writeFileSync(join(h.cwd, "specs/0003_spec_c.md"), `| Status | Agreed |\n| Last verified | ${today()} |\n`);
+    writeFileSync(join(h.cwd, "specs/Refused/0004_spec_d.md"), "| Status | Refused |\n");
+    return h;
+  };
+  // The menu entry opens the same picker; refused specs are not offered.
+  const h = await setup(["verify (check specs against the code)", "[x] 0001 · Agreed · a", "[ ] 0003 · Agreed · c", "▶ verify 2 selected"]);
+  await h.commands.spec.handler("", h.ctx);
+  assert.deepEqual(h.offered[1], ["▶ verify 2 selected", "[x] 0001 · Agreed · a", "[x] 0002 · Draft · b", "[ ] 0003 · Agreed · c"]);
+  assert.deepEqual(h.offered[2], ["▶ verify 1 selected", "[ ] 0001 · Agreed · a", "[x] 0002 · Draft · b", "[ ] 0003 · Agreed · c"]);
+  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/0003_spec_c\.md` against the code/);
+
+  // During a run, no picker: the command says a run is in progress.
+  assert.equal(h.status(), "✎ spec-mode verify");
+  await h.commands.spec.handler("verify", h.ctx);
+  assert.equal(h.offered.length, 4); // the menu and three pickers, none more
+  assert.match(h.notes.at(-1)!, /already in progress/);
+
+  const esc = await setup([]);
+  await esc.commands.spec.handler("verify", esc.ctx);
+  assert.equal(esc.offered.length, 1);
+  assert.deepEqual(esc.sent.user, []);
+  assert.equal(esc.status(), undefined);
+
+  const none = await setup(["[x] 0001 · Agreed · a", "[x] 0002 · Draft · b", "▶ verify 0 selected"]);
+  await none.commands.spec.handler("verify", none.ctx);
+  assert.match(none.notes.at(-1)!, /No spec selected/);
+  assert.deepEqual(none.sent.user, []);
+
+  // Without a UI there is no picker: the oldest specs, never verified first, as before.
+  const headless = await setup([]);
+  headless.ctx.hasUI = false;
+  await headless.commands.spec.handler("verify", headless.ctx);
+  assert.match(headless.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/0001_spec_a\.md` against/);
+});
+
+test("in spec mode /spec verify checks the spec in progress only, then returns to spec mode", async () => {
+  const h = harness({ picks: ["verify (the spec in progress)"] });
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), FILLED);
+  await h.commands.spec.handler("start", h.ctx);
+  await h.commands.spec.handler("verify", h.ctx); // nothing written yet
+  assert.match(h.notes.at(-1)!, /only the spec in progress can be verified/);
+  writeFileSync(join(h.cwd, "specs/0002_spec_b.md"), FILLED);
+  await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0002_spec_b.md" }, isError: false });
+  await h.commands.spec.handler("verify 1", h.ctx);
+  assert.match(h.notes.at(-1)!, /only the spec in progress can be verified/);
+  assert.deepEqual(h.sent.user, []);
+  await h.commands.spec.handler("", h.ctx); // the menu entry, no picker
+  assert.equal(h.offered.length, 1);
+  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md` against the code, and no other spec/);
+  assert.equal(h.status(), "✎ spec-mode verify");
+  await h.fire("agent_settled", { aborted: false });
+  assert.equal(h.status(), "✎ spec-mode 0002 · Draft");
+});
+
+test("/spec verify_oldest checks the oldest verified specs without a list", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), "| Status | Agreed |\n| Last verified | 2026-05-01 |\n");
+  writeFileSync(join(h.cwd, "specs/0002_spec_b.md"), "| Status | Agreed |\n| Last verified | |\n");
+  writeFileSync(join(h.cwd, "specs/0003_spec_c.md"), `| Status | Agreed |\n| Last verified | ${today()} |\n`);
+  await h.commands.spec.handler("verify_oldest", h.ctx);
+  assert.equal(h.offered.length, 0);
+  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/0001_spec_a\.md` against the code/);
+  await h.fire("agent_settled", { aborted: false });
+  // Both oldest verified today: nothing to do, nothing sent.
+  for (const f of ["0001_spec_a.md", "0002_spec_b.md"]) writeFileSync(join(h.cwd, "specs", f), `| Status | Agreed |\n| Last verified | ${today()} |\n`);
+  await h.commands.spec.handler("verify_oldest", h.ctx);
+  assert.match(h.notes.at(-1)!, /already verified today/);
+  assert.equal(h.sent.user.length, 1);
 });

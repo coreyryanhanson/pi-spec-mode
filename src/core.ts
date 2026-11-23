@@ -51,6 +51,13 @@ export function resolveSpec(specsDir: string, arg: string, withArchived = false)
   });
 }
 
+/** The words of `/spec verify 3 0005 login` when every one names a spec (a number, a spec file name, or a spec that exists); undefined for a request. */
+export function specRefs(specsDir: string, rest: string): string[] | undefined {
+  const words = rest.trim().split(/\s+/).filter(Boolean);
+  const isRef = (w: string) => /^\d{1,4}$|^\d{4}_spec_.+\.md$/i.test(w) || !!resolveSpec(specsDir, w);
+  return words.length && words.every(isRef) ? words : undefined;
+}
+
 const rowRe = (field: string) => new RegExp(`^\\|\\s*${field}\\s*\\|([^|\\n]*)\\|`, "m");
 
 export function getField(md: string, field: string): string | undefined {

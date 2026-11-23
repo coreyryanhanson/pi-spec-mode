@@ -2,6 +2,10 @@
 
 ## unreleased
 
+### Added
+
+- Verify the specs you choose: `/spec verify` (and `verify` in the `/spec` menu) opens a list where Enter ticks or unticks a spec and the first line starts the run. The `verifyCount` specs verified longest ago are ticked from the start, so Enter alone does what `/spec verify` did before; without an interactive UI it still checks them directly. `/spec verify_oldest` runs that check directly, without the list. `/spec verify 3 5` names several specs. In spec mode, `verify` checks the spec in progress and spec mode resumes after the run; verifying another spec there is refused.
+
 ### Fixed
 
 - `/spec verify` and `/spec verify <spec>` sent the generic message "Verify the specs.": after a `/spec exit`, the agent read it as a normal-mode request and did not know which spec to check. The message now names the specs of the run and says the VERIFY contract applies.
