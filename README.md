@@ -37,7 +37,7 @@ pi -e ./                           # try a local checkout
 | `/spec settings` | Show and change the settings |
 | `/spec exit` | Leave spec mode |
 
-Commands that take a spec accept its number (`/spec agree 0003`) or file name; without one, `/spec` shows a picker.
+Commands that take a spec accept its number (`/spec agree 0003`) or file name. Typed without one (`/spec implement`), `agree`, `refuse`, `restore`, `obsolete` and `implement` open the same spec picker as the `/spec` menu; `agree` and `refuse` act on the spec in progress if there is one.
 
 ### In spec mode
 

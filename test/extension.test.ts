@@ -624,14 +624,14 @@ test("commands refuse what the current state does not allow", async () => {
   await h.fire("session_start");
   await h.commands.spec.handler("exit", h.ctx);
   assert.match(h.notes.at(-1)!, /not on/);
-  await h.commands.spec.handler("agree", h.ctx);
-  assert.match(h.notes.at(-1)!, /not on/);
+  await h.commands.spec.handler("agree", h.ctx); // no spec named, none in progress: the picker has nothing to offer
+  assert.match(h.notes.at(-1)!, /No Draft spec to agree/);
   assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["start", "list", "agree", "verify", "implement", "refuse", "restore", "obsolete", "purge", "template", "settings"]);
   await h.commands.spec.handler("start", h.ctx);
   await h.commands.spec.handler("start", h.ctx);
   assert.match(h.notes.at(-1)!, /already on/);
   await h.commands.spec.handler("agree", h.ctx);
-  assert.match(h.notes.at(-1)!, /No spec written yet/);
+  assert.match(h.notes.at(-1)!, /No Draft spec to agree/);
   assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["refuse", "list", "template", "exit", "settings"]);
 });
 
@@ -704,6 +704,74 @@ test("/spec menu picks a spec from a list instead of typing a number", async () 
   assert.match(empty.notes.at(-1)!, /No Agreed spec to implement/);
   assert.equal(empty.offered.length, 1); // the menu only
   assert.deepEqual(empty.sent.user, []);
+});
+
+test("/spec <command> without a spec opens the same picker as the menu", async () => {
+  const setup = async (opts: { plan?: boolean; picks?: string[] }) => {
+    const h = harness(opts);
+    await h.fire("session_start");
+    mkdirSync(join(h.cwd, "specs/Implemented"), { recursive: true });
+    mkdirSync(join(h.cwd, "specs/Refused"), { recursive: true });
+    writeFileSync(join(h.cwd, "specs/0001_spec_login.md"), "| Status | Agreed |\n");
+    writeFileSync(join(h.cwd, "specs/0002_spec_draft.md"), FILLED);
+    writeFileSync(join(h.cwd, "specs/Implemented/0003_spec_done.md"), "| Status | Implemented |\n");
+    writeFileSync(join(h.cwd, "specs/Refused/0004_spec_old.md"), "| Status | Refused |\n");
+    return h;
+  };
+
+  const impl = await setup({ plan: true, picks: ["0001 · Agreed · login"] });
+  await impl.commands.spec.handler("implement", impl.ctx);
+  assert.deepEqual(impl.offered[0], ["0001 · Agreed · login"]);
+  assert.match(impl.sent.user[0], /^\/plan Implement the agreed spec `specs\/0001_spec_login\.md`/);
+
+  const agree = await setup({ picks: ["0002 · Draft · draft"] });
+  await agree.commands.spec.handler("agree", agree.ctx);
+  assert.deepEqual(agree.offered[0], ["0002 · Draft · draft"]);
+  assert.match(readFileSync(join(agree.cwd, "specs/0002_spec_draft.md"), "utf8"), /\| Status \| Agreed \|/);
+
+  const refuse = await setup({ picks: ["0002 · Draft · draft"] });
+  await refuse.commands.spec.handler("refuse", refuse.ctx);
+  assert.ok(existsSync(join(refuse.cwd, "specs/Refused/0002_spec_draft.md")));
+
+  const restore = await setup({ picks: ["0004 · Refused · old"] });
+  await restore.commands.spec.handler("restore", restore.ctx);
+  assert.deepEqual(restore.offered[0], ["0004 · Refused · old"]);
+  assert.ok(existsSync(join(restore.cwd, "specs/0004_spec_old.md")));
+
+  // Obsolete asks the spec, then its replacement, like the menu.
+  const obs = await setup({ picks: ["0003 · Implemented · done", "none (no replacement)"] });
+  await obs.commands.spec.handler("obsolete", obs.ctx);
+  assert.deepEqual(obs.offered[0], ["0003 · Implemented · done"]);
+  assert.equal(obs.offered.length, 2);
+  assert.ok(existsSync(join(obs.cwd, "specs/Obsolete/0003_spec_done.md")));
+
+  // Nothing eligible: the same message as the menu, no picker.
+  const empty = harness({ plan: true });
+  await empty.fire("session_start");
+  await empty.commands.spec.handler("implement", empty.ctx);
+  assert.match(empty.notes.at(-1)!, /No Agreed spec to implement/);
+  assert.equal(empty.offered.length, 0);
+
+  // Typing the spec still runs it directly, no picker.
+  const typed = await setup({ plan: true });
+  await typed.commands.spec.handler("implement 0001", typed.ctx);
+  assert.equal(typed.offered.length, 0);
+  assert.match(typed.sent.user[0], /^\/plan Implement the agreed spec/);
+
+  // Without a UI there is no list to show: the command still asks for the spec.
+  const headless = await setup({ plan: true });
+  headless.ctx.hasUI = false;
+  const errs: string[] = [];
+  const orig = console.error;
+  console.error = (...a: unknown[]) => errs.push(a.join(" "));
+  try {
+    await headless.commands.spec.handler("implement", headless.ctx);
+    await headless.commands.spec.handler("agree", headless.ctx);
+  } finally {
+    console.error = orig;
+  }
+  assert.match(errs[0], /Which spec\? \/spec implement/);
+  assert.match(errs[1], /Spec mode is not on/);
 });
 
 test("/spec settings says which files exist and reloads a project file created later", async () => {

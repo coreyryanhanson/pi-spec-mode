@@ -1,5 +1,11 @@
 # Changelog
 
+## unreleased
+
+### Changed
+
+- `/spec implement`, `/spec agree`, `/spec refuse`, `/spec restore` and `/spec obsolete` typed without a spec open the same spec picker as the `/spec` menu, where they used to stop on "Which spec?". Typing the spec (`/spec implement 0003`) works as before, `agree` and `refuse` still act on the spec in progress, and without an interactive UI the command still asks for the spec.
+
 ## 1.0.0
 
 ### Added

@@ -462,35 +462,41 @@ export default function specMode(pi: ExtensionAPI) {
       const namesSpec = ["verify", "agree"].includes(sub) && rest !== "" && (/^\d{1,4}$|^\d{4}_spec_.+\.md$/i.test(rest) || !!resolveSpec(specsAbs(ctx), rest));
       const isRequest = rest !== "" && !namesSpec && ["start", "list", "exit", "off", "agree", "verify", "purge", "template", "settings"].includes(sub);
 
+      // Without a spec in progress, agree and refuse need one picked, like implement and restore.
+      const asksSpec = (s: string) => ["agree", "refuse", "implement", "restore", "obsolete"].includes(s) && !((s === "agree" || s === "refuse") && state.spec);
+      /** Picks the spec from a list, then runs the same command as typing it with that spec. */
+      const pickThenRun = async (s: string): Promise<void> => {
+        const choices = specPicker(ctx, s);
+        if (!choices.length) return notify(ctx, PICKER_EMPTY[s] ?? "No spec to pick.", "warning");
+        const which = await pickSpec(ctx, `${s}: which spec?`, choices.map((c) => c.label));
+        const arg = choices.find((c) => c.label === which)?.arg;
+        if (!arg) return;
+        if (s === "obsolete") {
+          // A replacement is any live spec but this one; none is a valid answer.
+          const none = "none (no replacement)";
+          const others = specChoices(specsAbs(ctx)).filter((c) => (c.folder === "" || c.folder === "Implemented") && c.arg !== arg);
+          const by = await pickSpec(ctx, `obsolete ${arg}: replaced by which spec?`, [none, ...others.map((c) => c.label)]);
+          if (by === undefined) return;
+          return run(`obsolete ${arg} ${others.find((c) => c.label === by)?.arg ?? ""}`.trim(), ctx);
+        }
+        return run(`${s} ${arg}`, ctx);
+      };
+      // `/spec implement` alone offers the same list as the menu; without a UI the command still asks for the spec.
+      if (rest === "" && ctx.hasUI && asksSpec(sub)) return pickThenRun(sub);
+
       switch (isRequest ? undefined : sub) {
         case "": {
           if (!ctx.hasUI) return notify(ctx, `Usage: ${USAGE}`);
-          // Without a spec in progress, agree and refuse need one picked, like implement and restore.
           const entries = commands().map((sub) => {
             const current = (sub === "agree" || sub === "refuse") && !!state.spec;
             const detail = current ? "the spec in progress" : MENU_DETAIL[sub];
-            return { sub, label: detail ? `${sub} (${detail})` : sub, asksSpec: ["agree", "refuse", "implement", "restore", "obsolete"].includes(sub) && !current };
+            return { sub, label: detail ? `${sub} (${detail})` : sub, asksSpec: asksSpec(sub) };
           });
           const pick = await ctx.ui.select("Spec mode", entries.map((e) => e.label));
           const entry = entries.find((e) => e.label === pick);
           // The menu runs the same command as typing it.
           if (!entry) return;
-          const menuSub = entry.sub;
-          if (!entry.asksSpec) return run(menuSub, ctx);
-          const choices = specPicker(ctx, menuSub);
-          if (!choices.length) return notify(ctx, PICKER_EMPTY[menuSub] ?? "No spec to pick.", "warning");
-          const which = await pickSpec(ctx, `${menuSub}: which spec?`, choices.map((c) => c.label));
-          const arg = choices.find((c) => c.label === which)?.arg;
-          if (!arg) return;
-          if (menuSub === "obsolete") {
-            // A replacement is any live spec but this one; none is a valid answer.
-            const none = "none (no replacement)";
-            const others = specChoices(specsAbs(ctx)).filter((c) => (c.folder === "" || c.folder === "Implemented") && c.arg !== arg);
-            const by = await pickSpec(ctx, `obsolete ${arg}: replaced by which spec?`, [none, ...others.map((c) => c.label)]);
-            if (by === undefined) return;
-            return run(`obsolete ${arg} ${others.find((c) => c.label === by)?.arg ?? ""}`.trim(), ctx);
-          }
-          return run(`${menuSub} ${arg}`, ctx);
+          return entry.asksSpec ? pickThenRun(entry.sub) : run(entry.sub, ctx);
         }
         case "start": {
           if (!idle) return busy();
