@@ -456,6 +456,21 @@ test("/spec agree <spec> refuses an implemented spec", async () => {
   assert.match(readFileSync(p, "utf8"), /\| Status \| Implemented \|/);
 });
 
+test("an implemented spec extended back to Draft is agreed again by number or from the menu", async () => {
+  const h = harness({ picks: ["agree", "0001 · Draft · a"] });
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs/Implemented"), { recursive: true });
+  const p = join(h.cwd, "specs/Implemented/0001_spec_a.md");
+  writeFileSync(p, FILLED);
+  await h.commands.spec.handler("", h.ctx);
+  assert.deepEqual(h.offered[1], ["0001 · Draft · a"]);
+  assert.match(readFileSync(p, "utf8"), /\| Status \| Agreed \|/);
+  writeFileSync(p, FILLED);
+  await h.commands.spec.handler("agree 1", h.ctx);
+  assert.match(readFileSync(p, "utf8"), /\| Status \| Agreed \|/);
+  assert.match(h.notes.at(-1)!, /0001 agreed/);
+});
+
 test("/spec agree <spec> uses the same template checks as the footer spec", async () => {
   const h = harness();
   await h.fire("session_start");

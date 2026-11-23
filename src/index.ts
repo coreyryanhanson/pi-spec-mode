@@ -142,7 +142,7 @@ export default function specMode(pi: ExtensionAPI) {
     if (sub === "implement") return all.filter((c) => c.status === "Agreed");
     if (sub === "restore") return all.filter((c) => c.folder === "Refused");
     if (sub === "obsolete") return all.filter((c) => c.folder === "Implemented");
-    if (sub === "agree") return all.filter((c) => c.folder === "" && c.status === "Draft");
+    if (sub === "agree") return all.filter((c) => (c.folder === "" || c.folder === "Implemented") && c.status === "Draft");
     return all.filter((c) => c.folder === ""); // refuse resolves only in the specs folder
   }
 
@@ -231,7 +231,8 @@ export default function specMode(pi: ExtensionAPI) {
     if (arg.trim()) {
       p = resolveSpec(specsAbs(ctx), arg);
       if (!p) return notify(ctx, noSpec(arg), "warning");
-      if (basename(dirname(p)) === "Implemented") return notify(ctx, `${rel(ctx, p)} is already implemented.`, "warning");
+      // The status decides, not the folder: an implemented spec extended since is a Draft in Implemented/, to be agreed again.
+      if (getField(readFileSync(p, "utf8"), "Status") === "Implemented") return notify(ctx, `${rel(ctx, p)} is already implemented.`, "warning");
     } else {
       if (state.mode !== "spec") return notify(ctx, "Spec mode is not on: /spec agree works on the spec being written, /spec agree <spec> on an existing Draft one.", "warning");
       p = state.spec && resolve(ctx.cwd, state.spec);
