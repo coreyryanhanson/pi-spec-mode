@@ -60,9 +60,11 @@ export default function specMode(pi: ExtensionAPI) {
   const notify = (ctx: ExtensionContext, msg: string, level: "info" | "warning" | "error" = "info") =>
     ctx.hasUI ? ctx.ui.notify(msg, level) : console.error(msg);
 
+  const settingsFiles = (ctx: ExtensionContext) => ({ global: join(getAgentDir(), "pi-spec-mode.json"), project: join(ctx.cwd, ".pi", "pi-spec-mode.json") });
+
   function loadSettings(ctx: ExtensionContext): Settings {
-    const files = [join(getAgentDir(), "pi-spec-mode.json")];
-    if (ctx.isProjectTrusted()) files.push(join(ctx.cwd, ".pi", "pi-spec-mode.json"));
+    const { global, project } = settingsFiles(ctx);
+    const files = ctx.isProjectTrusted() ? [global, project] : [global];
     let s: Settings = { ...DEFAULT_SETTINGS };
     for (const f of files) {
       if (!existsSync(f)) continue;
@@ -382,9 +384,8 @@ export default function specMode(pi: ExtensionAPI) {
 
   function showSettings(ctx: ExtensionContext) {
     settings = loadSettings(ctx); // pick up a file created since the session started
-    const global = join(getAgentDir(), "pi-spec-mode.json");
-    const project = join(ctx.cwd, ".pi", "pi-spec-mode.json");
-    const state = (f: string) => (existsSync(f) ? "found" : "not found");
+    const { global, project } = settingsFiles(ctx);
+    const state =(f: string) => (existsSync(f) ? "found" : "not found");
     notify(
       ctx,
       [
@@ -415,8 +416,7 @@ export default function specMode(pi: ExtensionAPI) {
         notify(ctx, `pi-spec-mode: ${err}, not saved`, "warning");
         continue;
       }
-      const global = join(getAgentDir(), "pi-spec-mode.json");
-      const project = join(ctx.cwd, ".pi", "pi-spec-mode.json");
+      const { global, project } = settingsFiles(ctx);
       const where = ctx.isProjectTrusted()
         ? await ctx.ui.select(`Save ${key} in`, [`this project (${project})`, `all projects (${global})`])
         : `all projects (${global})`; // an untrusted project file would be ignored
