@@ -22,25 +22,34 @@ pi -e ./                           # try a local checkout
 
 | Command | What it does |
 |---|---|
-| `/spec` | Menu fitted to the current state, listing the same commands as `/spec ` + Tab (with a short detail in parentheses); implement, restore, and agree or refuse with no spec in progress, then pick the spec from a list of the ones they accept (↑ on the first entry jumps to the last, ↓ on the last back to the first; type the number instead if you prefer: `/spec implement 0003`) |
-| `/spec start` | Enter spec mode, send nothing |
-| `/spec <request>` | Enter spec mode and send the request. A request may start with a command word (`/spec verify that login works offline`); `/spec agree` or `/spec verify` followed by a spec number or file name is always the command, even when no spec matches |
-| `/spec list` | Every spec, refused and obsolete ones included: number, `Status`, `Last verified` and how many days ago |
-| `/spec agree [spec]` | Set the spec shown in the footer to `Agreed` and leave spec mode; with a spec name, agree that `Draft` spec (`/spec agree 0003`) whatever the mode, without closing the spec being written |
-| `/spec refuse [spec]` | Set a spec (default: the one in the footer) to `Refused` and move it to `specs/Refused/`: kept, but ignored by `/spec verify` and the agent. Refusing the spec in the footer leaves spec mode |
-| `/spec restore <spec>` | Move a refused spec back to `specs/` as `Draft` |
-| `/spec obsolete <spec> [replacement]` | An implemented spec no longer true (replaced by another one, or dropped): set it to `Obsolete` and move it to `specs/Obsolete/`, with a banner naming the replacement. Ignored by `/spec verify`, and the agent is told never to read it (spec mode, verify and `/spec implement`). From the `/spec` menu, pick the spec, then its replacement or `none`. A spec never implemented is refused instead |
-| `/spec purge` | Delete every spec in `specs/Obsolete/`, after a confirmation listing them; never without an interactive UI |
-| `/spec verify` | Check the `verifyCount` specs verified longest ago against the code |
-| `/spec verify <spec>` | Check one spec against the code, even if already verified today |
+| `/spec` | Menu of the commands available right now |
+| `/spec start` | Enter spec mode |
+| `/spec <request>` | Enter spec mode and send the request |
+| `/spec list` | List every spec with its status and last check |
+| `/spec agree [spec]` | Mark a `Draft` spec `Agreed` (default: the current one) |
+| `/spec refuse [spec]` | Mark a spec `Refused` and move it to `specs/Refused/` |
+| `/spec restore <spec>` | Bring a refused spec back as `Draft` |
+| `/spec obsolete <spec> [replacement]` | Retire an implemented spec to `specs/Obsolete/` |
+| `/spec purge` | Delete the obsolete specs (asks first) |
+| `/spec verify [spec]` | Check specs against the code |
 | `/spec implement <spec>` | Hand an `Agreed` spec to plan mode |
-| `/spec template` | Create `specs/spec_template.md`, adapted to the project by the agent (asks first) |
+| `/spec template` | Create a spec template fitted to your project |
+| `/spec settings` | Show and change the settings |
 | `/spec exit` | Leave spec mode |
-| `/spec settings` | Show the effective settings and change them from a menu |
 
-While in spec mode the footer shows `✎ spec-mode` in blue (then `✎ spec-mode 0003 · Draft`); nothing when off. The agent can read the whole project, run only read-only shell commands, and write only Markdown files inside the specs folder. Before calling `spec_complete`, it checks the new spec against existing ones: it sees each spec's title and Goal sentence only, reads in full the `Agreed` and `Implemented` specs on the same subject, and asks about any contradicting rule. This keeps the context small but is not exhaustive: a conflicting rule in a spec whose title and goal look unrelated is missed (`/spec verify` remains the safety net). It asks decisions through `spec_question` and calls `spec_complete` when the spec is ready, which opens an **Agree / Keep discussing / Leave** menu.
+Commands that take a spec accept its number (`/spec agree 0003`) or file name; without one, `/spec` shows a picker.
 
-Specs live in `specs/NNNN_spec_<feature>.md`; implemented ones move to `specs/Implemented/`, refused ones to `specs/Refused/` (also when you set `Status` to `Refused` by hand, which leaves spec mode if it was the spec being written; this works on a spec in `specs/Implemented/` too, which `/spec refuse` does not accept), obsolete ones to `specs/Obsolete/` (also when you set `Status` to `Obsolete` by hand). Obsolete specs keep their number: a new spec never reuses it, even after `/spec purge`, which records the highest number it deletes in `specs/.last_purged` (commit it with your specs). The agent cannot agree a spec or mark one `Implemented` on its own: such a status change goes back, with a notice; only an `Agreed` spec becomes `Implemented`, through `/spec implement` or a verify run that finds it built.
+### In spec mode
+
+- The footer shows `✎ spec-mode 0003 · Draft`.
+- The agent reads the whole project, runs only read-only shell commands, and writes only Markdown files in the specs folder.
+- It asks you decisions through `spec_question`, and calls `spec_complete` when the spec is ready: you then pick **Agree**, **Keep discussing** or **Leave**.
+- Before that, it checks the new spec against the existing ones (titles and goals, plus a full read of related `Agreed` / `Implemented` specs) and asks about any contradiction.
+- It cannot agree a spec or mark one `Implemented` itself; that stays your call.
+
+### Spec lifecycle
+
+Specs live in `specs/NNNN_spec_<feature>.md`.
 
 ```mermaid
 flowchart LR
@@ -55,7 +64,14 @@ flowchart LR
     Obsolete -->|/spec purge| Deleted(( ))
 ```
 
-`/spec verify` runs over every spec outside `Refused/` and `Obsolete/`, oldest check first, and fixes a spec that drifted from the code. An `Agreed` spec it had to edit goes back to `Draft`, and the run ends by asking you, once per spec changed that way, whether to agree it again (`Agree again` / `Keep Draft`); a spec only stamped `Last verified` stays `Agreed` and is not offered, and so is a spec that was already `Draft`. Answering `Keep Draft` is not final: `/spec agree <spec>` agrees it later.
+- Setting `Status` to `Refused` or `Obsolete` by hand moves the file too.
+- A spec number is never reused, even after `/spec purge` (it records the last one in `specs/.last_purged`: commit it).
+
+### Verify
+
+`/spec verify` checks the `verifyCount` specs verified longest ago (or the one you name) and fixes any that drifted from the code. Refused and obsolete specs are skipped.
+
+An `Agreed` spec it had to change goes back to `Draft`; at the end you are asked whether to agree it again (or later, with `/spec agree`).
 
 ```mermaid
 flowchart LR
@@ -75,20 +91,19 @@ flowchart LR
 
 ## Make your own template (do it)
 
-The [bundled template](templates/spec_template.md) is deliberately generic. Spec quality comes from a template that speaks your project's language: a game needs "feel" and balance numbers, an API needs contracts and error codes, a mobile app needs screens and offline states. For the level of detail expected, read [a complete spec](examples/0001_spec_dark_mode.md): deliberately barebone — short sections, one rule per line, one number with its reason. Real specs usually say more.
+The [bundled template](templates/spec_template.md) is generic on purpose. Good specs come from a template in your project's language: a game needs feel and balance numbers, an API needs contracts and error codes, a mobile app needs screens and offline states. See [a complete spec](examples/0001_spec_dark_mode.md) for the expected level of detail.
 
 ```
 /spec template
 ```
 
-asks first, because it starts a decision you own: the generic template is copied to `specs/spec_template.md` as the starting point, then the agent quickly looks at the project (type, stack, domain, existing specs) and rewrites the file for it. Answer `No` and you are offered the plain copy instead.
+The agent copies the generic template to `specs/spec_template.md`, looks at your project, and rewrites it to fit.
 
-**Reread the result.** `/spec agree` checks every spec against this template, so a rule that is wrong here makes every spec wrong: the agent tells you what it changed, and so does spec mode when the run ends. Rename sections, rewrite the hints for your domain, delete what never applies. Spec mode uses the project's template whenever it exists, and warns you each time it falls back to the generic one. Agreeing a spec checks it against the template's own sections, so any section layout works; a section left empty is refused (write "None"). The agent can only change the template during that `/spec template` run: otherwise it is yours, edit it yourself or ask the agent outside spec mode.
+**Reread the result.** Every spec is checked against this template when you agree it, so a wrong rule here spreads everywhere. Rename sections, rewrite hints, delete what never applies. After this run the template is yours: the agent only edits it during `/spec template`.
 
 ## Settings
 
-`~/.pi/agent/pi-spec-mode.json`, overridden per project by `.pi/pi-spec-mode.json` (read only in trusted projects). Edit them by hand, or run `/spec settings`: pick a setting, type its value (empty keeps it), then pick the file it goes to (this project or all projects; an untrusted project can only use the global file). A value the rules below refuse is not saved, and a settings file that is not valid JSON is left unchanged.
-
+Global: `~/.pi/agent/pi-spec-mode.json`. Per project (trusted projects only): `.pi/pi-spec-mode.json`. Edit by hand or with `/spec settings`.
 
 ```json
 {
@@ -100,15 +115,15 @@ asks first, because it starts a decision you own: the generic template is copied
 }
 ```
 
-`specsDir` is the folder specs live in, relative to the project. A path outside the project, or an existing file, is ignored with a warning and `"specs"` is used.
+| Key | Meaning |
+|---|---|
+| `specsDir` | Specs folder, inside the project |
+| `language` | Language specs are written in |
+| `verifyCount` | Specs checked per `/spec verify` run |
+| `renameSession` | Rename the session `spec NNNN creation` when a spec is created |
+| `renamePlanSession` | Rename the session `spec NNNN planning` on `/spec implement` |
 
-`language` is the language specs are written in, whatever the language of the conversation. Anything but a non-empty string is ignored with a warning and `"English"` is used.
-
-`verifyCount` is how many specs `/spec verify` checks per run.
-
-`renameSession`, when `true`, renames the session `spec NNNN creation` as soon as the agent creates spec `NNNN` in spec mode (the name `/resume` shows). Editing an existing spec does not rename it. Anything but `true` or `false` is ignored with a warning and `false` is used.
-
-`renamePlanSession`, when `true`, renames the session `spec NNNN planning` just before `/spec implement` (typed or picked from the `/spec` menu) hands spec `NNNN` to plan mode. Same rules as `renameSession`; off by default.
+An invalid value is ignored with a warning and the default is used.
 
 ## Develop
 
@@ -120,14 +135,13 @@ npm run typecheck
 
 ## Known limitations
 
-- **Conflict check depends on section names.** The existing specs are summarised by their H1 title and the first line of a section named `Goal` (with or without a number, e.g. `## 2. Goal`). If your template renames it (`## Objectif`, `## Purpose`…), each spec is listed by its title only, and conflicts are detected less reliably. Keep a heading named `Goal` in your template to get the full summary.
-- **A spec that is a symbolic link is ignored.** `/spec list`, `/spec agree`, `/spec verify`, `/spec refuse` and the sweep of refused specs skip it: acting on it would write to the link's target, outside the specs folder. Keep the spec file itself in the specs folder.
-- **"Never read an obsolete spec" is a model instruction, not code.** The agent can still open a file in `specs/Obsolete/`; the banner at the top of each one tells it to ignore it. Run `/spec purge` to be sure.
-- **Conflict check is a model instruction, not code.** The agent is asked to read the related specs and report contradictions; nothing enforces that it does. `/spec verify` remains the safety net.
+- **The conflict check is a model instruction, not code**, and only sees each spec's title and `Goal` section. A conflict hidden in an unrelated-looking spec can be missed; `/spec verify` is the safety net. Keep a `Goal` heading in your template.
+- **"Never read an obsolete spec" is a model instruction too.** Run `/spec purge` to be sure.
+- **Symlinked specs are ignored**, so nothing is written outside the specs folder.
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for version history.
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## My other pi extensions & tools
 
@@ -140,4 +154,3 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 ## License
 
 MIT
-
