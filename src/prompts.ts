@@ -52,19 +52,21 @@ ${c.template}
 
 /** The message that starts a verify run: it names the specs, so the request cannot read as "verify everything" or as normal mode. */
 export function verifyRequest(targets: string[]): string {
-  return `Verify ${targets.map((t) => `\`${t}\``).join(", ")} against the code, and no other spec. The spec-mode VERIFY contract in the system prompt applies to this run: it replaces any earlier NORMAL or SPEC contract.`;
+  return `Verify ${targets.map((t) => `\`${t}\``).join(", ")}, and no other spec. The spec-mode VERIFY contract in the system prompt applies to this run: it replaces any earlier NORMAL or SPEC contract.`;
 }
 
 export function verifyContract(specsDir: string, today: string, targets: string[]): string {
   return `${VERIFY_MARKER}
-Verify these specs against the code, in this order: ${targets.map((t) => `\`${t}\``).join(", ")}.
+Verify these specs, in this order: ${targets.map((t) => `\`${t}\``).join(", ")}.
 Restrictions (enforced): read anything; bash read-only; write and edit only .md files inside \`${specsDir}/\`.
 
-For each spec, read it in full, then check one claim at a time: every numbered rule, every Feedback item, every number stated as behaviour, and the header (Agreed while the feature runs = drifted; Implemented while rules no longer match = rotted). A claim you cannot check counts as unverified, not passing.
+For each spec, read it in full, then check one claim at a time (every numbered rule, every Feedback item, every number stated as behaviour). What a claim is checked against depends on the spec's Status:
+- Implemented: against the code. The header too: Implemented while rules no longer match = rotted. A claim you cannot check counts as unverified, not passing.
+- Draft or Agreed: the feature is not built yet, so a rule the code does not do is expected, never a finding. Check it against the other specs of \`${specsDir}/\` (Draft, Agreed and Implemented): a rule contradicting another spec, the same behaviour specified twice with different values or names, a rule depending on behaviour no spec and no code provides, two rules of the spec contradicting each other. Read the code only where a rule states current behaviour ("as today", an existing name or value): that statement must hold. Header: Agreed while the feature already runs in full = drifted.
 
 Act:
 - Working code, spec wrong (renamed, moved, changed value, status or Implementation date stale): fix the spec. Working implemented behaviour is not a bug.
-- Code genuinely broken (missing, crashing, contradicting its own rules): report it, do not touch the spec.
+- Code genuinely broken (an Implemented rule missing, crashing, contradicting its own rules): report it, do not touch the spec.
 - A rule itself must change (new or dropped behaviour, different design): ask the user first with spec_question.
 - Undecidable: report it.
 Status only moves forward: Agreed whose rules all run → Implemented. Never set Agreed or Draft: a spec fixed to match the code keeps its status. An Agreed spec you edit is put back to Draft by spec mode itself, and the user is asked whether to agree it again once the run ends; never set Agreed yourself.

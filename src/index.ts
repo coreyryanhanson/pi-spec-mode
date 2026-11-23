@@ -33,7 +33,7 @@ const BUNDLED_TEMPLATE = fileURLToPath(new URL("../templates/spec_template.md", 
 const USAGE = "/spec start | <request> | list | agree [spec] | refuse [spec] | restore <spec> | obsolete <spec> [replacement] | purge | verify [spec...] | verify_oldest | implement <spec> | template | exit | settings";
 /** `/spec` menu detail shown after the command word, so the menu reads like the completion. */
 const MENU_DETAIL: Record<string, string> = {
-  start: "enter spec mode", verify: "check specs against the code", verify_oldest: "check the oldest verified specs", implement: "hand a spec to plan mode",
+  start: "enter spec mode", verify: "check specs against the code or each other", verify_oldest: "check the oldest verified specs", implement: "hand a spec to plan mode",
   restore: "a refused spec", obsolete: "an implemented spec replaced", purge: "delete obsolete specs",
   template: "create the project template", exit: "leave spec mode",
 };

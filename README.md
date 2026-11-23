@@ -31,7 +31,7 @@ pi -e ./                           # try a local checkout
 | `/spec restore <spec>` | Bring a refused spec back as `Draft` |
 | `/spec obsolete <spec> [replacement]` | Retire an implemented spec to `specs/Obsolete/` |
 | `/spec purge` | Delete the obsolete specs (asks first) |
-| `/spec verify [spec...]` | Check specs against the code |
+| `/spec verify [spec...]` | Check specs: implemented against the code, others against the other specs |
 | `/spec verify_oldest` | Check the `verifyCount` specs verified longest ago, without the list |
 | `/spec implement <spec>` | Hand an `Agreed` spec to plan mode |
 | `/spec template` | Create a spec template fitted to your project |
@@ -71,7 +71,7 @@ flowchart LR
 
 ### Verify
 
-`/spec verify` checks specs against the code and fixes any that drifted. Refused and obsolete specs are skipped.
+`/spec verify` checks an `Implemented` spec against the code, and a `Draft` or `Agreed` spec against the other specs (contradictions, duplicates, missing dependencies): a rule not built yet is not reported. It fixes any spec that drifted. Refused and obsolete specs are skipped.
 
 - `/spec verify` (or `verify` in the `/spec` menu) opens a list of the specs with the `verifyCount` verified longest ago already ticked: Enter on a spec ticks or unticks it, Enter on the first line starts the run. Without an interactive UI, it checks those `verifyCount` specs.
 - `/spec verify_oldest` checks those `verifyCount` specs directly, without the list.

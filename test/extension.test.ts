@@ -251,7 +251,7 @@ test("verify run: picks the two oldest, uses its contract, returns to previous m
   // The picker ticks the two oldest from the start: Enter alone keeps the old /spec verify.
   assert.deepEqual(h.offered[0], ["▶ verify 2 selected", "[ ] 0001 · Agreed · a", "[x] 0002 · Agreed · b", "[x] 0003 · Agreed · c"]);
   assert.equal(h.sent.user.length, 1);
-  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/Implemented\/0003_spec_c\.md` against the code, and no other spec\./);
+  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/Implemented\/0003_spec_c\.md`, and no other spec\./);
   assert.equal(h.status(), "✎ spec-mode verify");
   const c = await h.prompt();
   assert.match(c, /VERIFY/);
@@ -269,7 +269,7 @@ test("/spec verify <spec> checks only that spec, even if verified today", async 
   await h.commands.spec.handler("verify 2", h.ctx);
   assert.equal(h.sent.user.length, 1);
   // The request itself names the spec and the contract: a generic "Verify the specs." after a NORMAL contract read as "verify everything, normal mode".
-  assert.match(h.sent.user[0], /^Verify `specs\/Implemented\/0002_spec_b\.md` against the code, and no other spec\./);
+  assert.match(h.sent.user[0], /^Verify `specs\/Implemented\/0002_spec_b\.md`, and no other spec\./);
   assert.match(h.sent.user[0], /VERIFY contract[\s\S]*replaces any earlier NORMAL/);
   assert.doesNotMatch(h.sent.user[0], /0001/);
   assert.match(await h.prompt(), /in this order: `specs\/Implemented\/0002_spec_b\.md`\./);
@@ -1189,7 +1189,7 @@ test("/spec verify names several specs, and refuses the run when one does not ex
   assert.equal(h.status(), undefined);
   await h.commands.spec.handler("verify 3 0001_spec_a.md 3", h.ctx); // verified today, named: checked anyway, once each, in the typed order
   assert.equal(h.offered.length, 0);
-  assert.match(h.sent.user[0], /^Verify `specs\/Implemented\/0003_spec_c\.md`, `specs\/0001_spec_a\.md` against the code/);
+  assert.match(h.sent.user[0], /^Verify `specs\/Implemented\/0003_spec_c\.md`, `specs\/0001_spec_a\.md`/);
   assert.match(await h.prompt(), /in this order: `specs\/Implemented\/0003_spec_c\.md`, `specs\/0001_spec_a\.md`\./);
 });
 
@@ -1205,11 +1205,11 @@ test("/spec verify picker: Enter ticks or unticks a spec, the first line starts,
     return h;
   };
   // The menu entry opens the same picker; refused specs are not offered.
-  const h = await setup(["verify (check specs against the code)", "[x] 0001 · Agreed · a", "[ ] 0003 · Agreed · c", "▶ verify 2 selected"]);
+  const h = await setup(["verify (check specs against the code or each other)", "[x] 0001 · Agreed · a", "[ ] 0003 · Agreed · c", "▶ verify 2 selected"]);
   await h.commands.spec.handler("", h.ctx);
   assert.deepEqual(h.offered[1], ["▶ verify 2 selected", "[x] 0001 · Agreed · a", "[x] 0002 · Draft · b", "[ ] 0003 · Agreed · c"]);
   assert.deepEqual(h.offered[2], ["▶ verify 1 selected", "[ ] 0001 · Agreed · a", "[x] 0002 · Draft · b", "[ ] 0003 · Agreed · c"]);
-  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/0003_spec_c\.md` against the code/);
+  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/0003_spec_c\.md`/);
 
   // During a run, no picker: the command says a run is in progress.
   assert.equal(h.status(), "✎ spec-mode verify");
@@ -1232,7 +1232,7 @@ test("/spec verify picker: Enter ticks or unticks a spec, the first line starts,
   const headless = await setup([]);
   headless.ctx.hasUI = false;
   await headless.commands.spec.handler("verify", headless.ctx);
-  assert.match(headless.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/0001_spec_a\.md` against/);
+  assert.match(headless.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/0001_spec_a\.md`/);
 });
 
 test("in spec mode /spec verify checks the spec in progress only, then returns to spec mode", async () => {
@@ -1250,7 +1250,7 @@ test("in spec mode /spec verify checks the spec in progress only, then returns t
   assert.deepEqual(h.sent.user, []);
   await h.commands.spec.handler("", h.ctx); // the menu entry, no picker
   assert.equal(h.offered.length, 1);
-  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md` against the code, and no other spec/);
+  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, and no other spec/);
   assert.equal(h.status(), "✎ spec-mode verify");
   await h.fire("agent_settled", { aborted: false });
   assert.equal(h.status(), "✎ spec-mode 0002 · Draft");
@@ -1265,11 +1265,19 @@ test("/spec verify_oldest checks the oldest verified specs without a list", asyn
   writeFileSync(join(h.cwd, "specs/0003_spec_c.md"), `| Status | Agreed |\n| Last verified | ${today()} |\n`);
   await h.commands.spec.handler("verify_oldest", h.ctx);
   assert.equal(h.offered.length, 0);
-  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/0001_spec_a\.md` against the code/);
+  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/0001_spec_a\.md`/);
   await h.fire("agent_settled", { aborted: false });
   // Both oldest verified today: nothing to do, nothing sent.
   for (const f of ["0001_spec_a.md", "0002_spec_b.md"]) writeFileSync(join(h.cwd, "specs", f), `| Status | Agreed |\n| Last verified | ${today()} |\n`);
   await h.commands.spec.handler("verify_oldest", h.ctx);
   assert.match(h.notes.at(-1)!, /already verified today/);
   assert.equal(h.sent.user.length, 1);
+});
+
+test("verify checks implemented specs against the code, draft and agreed ones against the other specs", async () => {
+  const { verifyContract } = await import("../src/prompts.ts");
+  const c = verifyContract("specs", "2026-11-23", ["specs/0001_spec_a.md"]);
+  assert.match(c, /- Implemented: against the code/);
+  // A rule not built yet is the normal state of an Agreed spec: reporting it as unverified is noise.
+  assert.match(c, /- Draft or Agreed: .*a rule the code does not do is expected, never a finding.*against the other specs/);
 });
