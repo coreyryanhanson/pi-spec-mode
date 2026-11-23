@@ -179,7 +179,7 @@ test("agree refused while template text is left", async () => {
   await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0001_spec_x.md" }, isError: false });
   await h.commands.spec.handler("agree", h.ctx);
   assert.match(h.notes.at(-1)!, /Cannot agree/);
-  assert.equal(h.status(), "✎ spec-mode 0001 · Draft / Agreed / Implemented / Refused");
+  assert.equal(h.status(), "✎ spec-mode 0001 · Draft / Agreed / Implemented / Refused / Obsolete");
 });
 
 test("agree refused when the Status row is gone", async () => {
@@ -611,7 +611,7 @@ test("commands refuse what the current state does not allow", async () => {
   assert.match(h.notes.at(-1)!, /not on/);
   await h.commands.spec.handler("agree", h.ctx);
   assert.match(h.notes.at(-1)!, /not on/);
-  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["start", "list", "agree", "verify", "implement", "refuse", "restore", "template", "settings"]);
+  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["start", "list", "agree", "verify", "implement", "refuse", "restore", "obsolete", "purge", "template", "settings"]);
   await h.commands.spec.handler("start", h.ctx);
   await h.commands.spec.handler("start", h.ctx);
   assert.match(h.notes.at(-1)!, /already on/);
@@ -948,4 +948,90 @@ test("/spec list shows the specs, or says there are none", async () => {
   writeFileSync(join(h.cwd, "specs/0001_spec_login.md"), "| Status | Draft |\n");
   await h.commands.spec.handler("list", h.ctx);
   assert.match(h.notes.at(-1)!, /0001 +Draft +never verified +login/);
+});
+
+/** A project with a Draft spec, an Implemented one and an already obsolete one. */
+async function obsoleteSetup(opts: { picks?: string[]; confirms?: boolean[] } = {}) {
+  const h = harness(opts);
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs/Implemented"), { recursive: true });
+  mkdirSync(join(h.cwd, "specs/Obsolete"), { recursive: true });
+  writeFileSync(join(h.cwd, "specs/0001_spec_draft.md"), "| Status | Draft |\n");
+  writeFileSync(join(h.cwd, "specs/Implemented/0002_spec_login.md"), "| Status | Implemented |\n");
+  writeFileSync(join(h.cwd, "specs/Obsolete/0003_spec_old.md"), "| Status | Obsolete |\n");
+  return h;
+}
+
+test("/spec obsolete moves an implemented spec to Obsolete/ with its replacement, refuses anything else", async () => {
+  const h = await obsoleteSetup();
+  await h.commands.spec.handler("obsolete 1", h.ctx);
+  assert.match(h.notes.at(-1)!, /No implemented spec "1"[\s\S]*\/spec refuse/);
+  await h.commands.spec.handler("obsolete 2 9", h.ctx);
+  assert.match(h.notes.at(-1)!, /No spec "9"/);
+  await h.commands.spec.handler("obsolete 2 3", h.ctx); // an obsolete spec replaces nothing
+  assert.match(h.notes.at(-1)!, /No spec "3"/);
+  await h.commands.spec.handler("obsolete 2 2", h.ctx);
+  assert.match(h.notes.at(-1)!, /cannot replace itself/);
+  assert.ok(existsSync(join(h.cwd, "specs/Implemented/0002_spec_login.md")));
+  await h.commands.spec.handler("obsolete 2 1", h.ctx);
+  const md = readFileSync(join(h.cwd, "specs/Obsolete/0002_spec_login.md"), "utf8");
+  assert.match(md, /replaced by 0001_spec_draft\.md/);
+  assert.match(md, /\| Status \| Obsolete \|/);
+  assert.match(h.notes.at(-1)!, /0002 obsolete, replaced by 0001, moved to specs\/Obsolete\/0002_spec_login\.md/);
+});
+
+test("/spec menu obsolete picks an implemented spec, then its replacement or none", async () => {
+  const h = await obsoleteSetup({ picks: ["obsolete (an implemented spec replaced)", "0002 · Implemented · login", "none (no replacement)"] });
+  await h.commands.spec.handler("", h.ctx);
+  assert.deepEqual(h.offered[1], ["0002 · Implemented · login"]);
+  assert.deepEqual(h.offered[2], ["none (no replacement)", "0001 · Draft · draft"]);
+  assert.match(readFileSync(join(h.cwd, "specs/Obsolete/0002_spec_login.md"), "utf8"), /^> \*\*OBSOLETE on [\d-]+: ignore/);
+});
+
+test("/spec purge deletes the obsolete specs only once confirmed", async () => {
+  const h = await obsoleteSetup({ confirms: [false, true] });
+  await h.commands.spec.handler("purge", h.ctx);
+  assert.match(h.asked[0].message, /specs\/Obsolete\/0003_spec_old\.md[\s\S]*cannot be undone/);
+  assert.ok(existsSync(join(h.cwd, "specs/Obsolete/0003_spec_old.md")));
+  assert.match(h.notes.at(-1)!, /Nothing deleted/);
+  await h.commands.spec.handler("purge", h.ctx);
+  assert.ok(!existsSync(join(h.cwd, "specs/Obsolete/0003_spec_old.md")));
+  assert.ok(existsSync(join(h.cwd, "specs/Implemented/0002_spec_login.md")));
+  await h.commands.spec.handler("purge", h.ctx);
+  assert.match(h.notes.at(-1)!, /No obsolete spec/);
+});
+
+test("/spec purge without a UI deletes nothing", async () => {
+  const h = await obsoleteSetup();
+  h.ctx.hasUI = false;
+  const err = console.error;
+  console.error = () => {};
+  try {
+    await h.commands.spec.handler("purge", h.ctx);
+  } finally {
+    console.error = err;
+  }
+  assert.ok(existsSync(join(h.cwd, "specs/Obsolete/0003_spec_old.md")));
+});
+
+test("a spec set to Obsolete by hand is moved to Obsolete/ and left out of the spec contract", async () => {
+  const h = await obsoleteSetup();
+  writeFileSync(join(h.cwd, "specs/Implemented/0002_spec_login.md"), "| Status | Obsolete |\n");
+  await h.commands.spec.handler("start", h.ctx);
+  const contract = await h.prompt();
+  assert.ok(existsSync(join(h.cwd, "specs/Obsolete/0002_spec_login.md")));
+  assert.doesNotMatch(contract, /- specs\/Obsolete/);
+});
+
+test("spec, verify and implement prompts forbid reading obsolete specs", async () => {
+  const h = await obsoleteSetup();
+  await h.commands.spec.handler("start", h.ctx);
+  assert.match(await h.prompt(), /Never read, cite or extend specs in `specs\/Obsolete\/`/);
+  await h.commands.spec.handler("exit", h.ctx);
+  await h.commands.spec.handler("verify", h.ctx);
+  const verify = await h.prompt();
+  assert.match(verify, /Never read, cite or extend specs in `specs\/Obsolete\/`/);
+  assert.match(verify, /Never set Status to Refused or Obsolete/);
+  const { implementRequest } = await import("../src/prompts.ts");
+  assert.match(implementRequest("specs/0001_spec_a.md", "specs"), /Never read, cite or extend specs in `specs\/Obsolete\/`/);
 });

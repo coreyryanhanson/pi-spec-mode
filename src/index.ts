@@ -1,11 +1,11 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ExtensionAPI, type ExtensionContext, ExtensionSelectorComponent, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, listSpecs, missingSections,
-  nextSpecNumber, pickerMove, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, settingError, specChoices, type SpecChoice, specSummary, specTable, sweepRefused, today, verifyQueue, withSetting,
+  nextSpecNumber, obsoleteSpec, obsoleteSpecs, pickerMove, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, settingError, specChoices, type SpecChoice, specSummary, specTable, sweepArchived, today, verifyQueue, withSetting,
 } from "./core.ts";
 import { implementRequest, NORMAL_CONTRACT, specContract, templateRequest, verifyContract } from "./prompts.ts";
 
@@ -30,11 +30,12 @@ const SECTION = "spec-mode";
 const MUTEX = "workflow:mutex:v1"; // shared with @narumitw/pi-plan-mode: only one agent workflow at a time
 const READ_TOOLS = new Set(["read", "grep", "find", "ls", "spec_question", "spec_complete"]);
 const BUNDLED_TEMPLATE = fileURLToPath(new URL("../templates/spec_template.md", import.meta.url));
-const USAGE = "/spec start | <request> | list | agree [spec] | refuse [spec] | restore <spec> | verify [spec] | implement <spec> | template | exit | settings";
+const USAGE = "/spec start | <request> | list | agree [spec] | refuse [spec] | restore <spec> | obsolete <spec> [replacement] | purge | verify [spec] | implement <spec> | template | exit | settings";
 /** `/spec` menu detail shown after the command word, so the menu reads like the completion. */
 const MENU_DETAIL: Record<string, string> = {
   start: "enter spec mode", verify: "check specs against the code", implement: "hand a spec to plan mode",
-  restore: "a refused spec", template: "create the project template", exit: "leave spec mode",
+  restore: "a refused spec", obsolete: "an implemented spec replaced", purge: "delete obsolete specs",
+  template: "create the project template", exit: "leave spec mode",
 };
 const DEFAULT_SETTINGS: Settings = { specsDir: "specs", language: "English", verifyCount: 2, renameSession: false, renamePlanSession: false };
 /** Menu action → what to say when its picker has nothing to offer. */
@@ -43,6 +44,7 @@ const PICKER_EMPTY: Record<string, string> = {
   restore: "No refused spec to restore.",
   agree: "No Draft spec to agree.",
   refuse: "No spec to refuse.",
+  obsolete: "No implemented spec to mark obsolete.",
 };
 
 export default function specMode(pi: ExtensionAPI) {
@@ -139,6 +141,7 @@ export default function specMode(pi: ExtensionAPI) {
     const all = specChoices(specsAbs(ctx));
     if (sub === "implement") return all.filter((c) => c.status === "Agreed");
     if (sub === "restore") return all.filter((c) => c.folder === "Refused");
+    if (sub === "obsolete") return all.filter((c) => c.folder === "Implemented");
     if (sub === "agree") return all.filter((c) => c.folder === "" && c.status === "Draft");
     return all.filter((c) => c.folder === ""); // refuse resolves only in the specs folder
   }
@@ -323,12 +326,47 @@ export default function specMode(pi: ExtensionAPI) {
     }
   }
 
-  /** A spec set to Refused by hand or by the agent is moved like /spec refuse would; true when that ended spec mode. */
+  /** Only an implemented spec becomes obsolete: one never built is refused instead. */
+  function obsolete(ctx: ExtensionContext, arg: string) {
+    if (state.mode === "verify") return notify(ctx, "A spec verify run is in progress.", "warning");
+    const [name = "", by = ""] = arg.trim().split(/\s+/);
+    if (!name) return notify(ctx, "Which spec? /spec obsolete <number or name> [replacement]", "warning");
+    const p = resolveSpec(specsAbs(ctx), name);
+    if (!p || dirname(p) !== join(specsAbs(ctx), "Implemented"))
+      return notify(ctx, `No implemented spec "${name}" in ${settings.specsDir}/Implemented/: a spec never implemented is refused instead (/spec refuse).`, "warning");
+    // The replacement must be a live spec: a refused or obsolete one replaces nothing.
+    const r = by ? resolveSpec(specsAbs(ctx), by) : undefined;
+    if (by && (!r || r === p)) return notify(ctx, r ? "A spec cannot replace itself." : noSpec(by), "warning");
+    try {
+      const dest = obsoleteSpec(specsAbs(ctx), p, today(), r && basename(r));
+      notify(ctx, `${basename(p).slice(0, 4)} obsolete${r ? `, replaced by ${basename(r).slice(0, 4)}` : ""}, moved to ${rel(ctx, dest)}`);
+    } catch (e) {
+      notify(ctx, `Cannot mark ${rel(ctx, p)} obsolete: ${(e as Error).message}`, "error");
+    }
+  }
+
+  /** Deletes the obsolete specs, after a confirmation that lists them: never without a UI to ask. */
+  async function purge(ctx: ExtensionContext) {
+    if (state.mode === "verify") return notify(ctx, "A spec verify run is in progress.", "warning");
+    const files = obsoleteSpecs(specsAbs(ctx));
+    if (!files.length) return notify(ctx, `No obsolete spec in ${settings.specsDir}/Obsolete/.`);
+    if (!ctx.hasUI) return notify(ctx, "/spec purge asks for a confirmation: run it from the interactive UI.", "warning");
+    const ok = await ctx.ui.confirm(`Delete ${files.length} obsolete spec(s)?`, `${files.map((f) => rel(ctx, f)).join("\n")}\n\nThis cannot be undone.`);
+    if (!ok) return notify(ctx, "Nothing deleted.");
+    try {
+      for (const f of files) unlinkSync(f);
+    } catch (e) {
+      return notify(ctx, `Could not delete every obsolete spec: ${(e as Error).message}`, "error");
+    }
+    notify(ctx, `Deleted ${files.length} obsolete spec(s) from ${settings.specsDir}/Obsolete/`);
+  }
+
+  /** A spec set to Refused or Obsolete by hand or by the agent is moved like the command would; true when that ended spec mode. */
   function sweep(ctx: ExtensionContext): boolean {
     let left = false;
     try {
-      for (const p of sweepRefused(specsAbs(ctx), today())) {
-        const msg = `${basename(p).slice(0, 4)} is Refused: moved to ${rel(ctx, p)}`;
+      for (const p of sweepArchived(specsAbs(ctx), today())) {
+        const msg = `${basename(p).slice(0, 4)} is ${basename(dirname(p))}: moved to ${rel(ctx, p)}`;
         // Same rule as /spec refuse: the spec being written refused by hand also ends spec mode.
         if (state.mode !== "off" && state.spec && basename(state.spec) === basename(p)) {
           exit(ctx, `${msg} — spec mode off`);
@@ -336,7 +374,7 @@ export default function specMode(pi: ExtensionAPI) {
         } else notify(ctx, msg);
       }
     } catch (e) {
-      notify(ctx, `pi-spec-mode: could not move a refused spec: ${(e as Error).message}`, "warning");
+      notify(ctx, `pi-spec-mode: could not move a refused or obsolete spec: ${(e as Error).message}`, "warning");
     }
     return left;
   }
@@ -401,7 +439,7 @@ export default function specMode(pi: ExtensionAPI) {
 
   /** Subcommands the current state accepts, in menu order: the menu and the completion offer the same list. */
   function commands(): string[] {
-    if (state.mode === "off") return ["start", "list", "agree", "verify", "implement", "refuse", "restore", "template", "settings"];
+    if (state.mode === "off") return ["start", "list", "agree", "verify", "implement", "refuse", "restore", "obsolete", "purge", "template", "settings"];
     if (state.mode === "spec") return [...(state.spec ? ["agree"] : []), "refuse", "list", "template", "exit", "settings"];
     return ["list", "exit", "settings"];
   }
@@ -421,7 +459,7 @@ export default function specMode(pi: ExtensionAPI) {
       // `/spec verify 0003` and `/spec agree 0003` name a spec, so they are the command; a number or spec file name
       // that matches nothing is too, so a typo gets "No spec" instead of starting spec mode.
       const namesSpec = ["verify", "agree"].includes(sub) && rest !== "" && (/^\d{1,4}$|^\d{4}_spec_.+\.md$/i.test(rest) || !!resolveSpec(specsAbs(ctx), rest));
-      const isRequest = rest !== "" && !namesSpec && ["start", "list", "exit", "off", "agree", "verify", "template", "settings"].includes(sub);
+      const isRequest = rest !== "" && !namesSpec && ["start", "list", "exit", "off", "agree", "verify", "purge", "template", "settings"].includes(sub);
 
       switch (isRequest ? undefined : sub) {
         case "": {
@@ -430,7 +468,7 @@ export default function specMode(pi: ExtensionAPI) {
           const entries = commands().map((sub) => {
             const current = (sub === "agree" || sub === "refuse") && !!state.spec;
             const detail = current ? "the spec in progress" : MENU_DETAIL[sub];
-            return { sub, label: detail ? `${sub} (${detail})` : sub, asksSpec: ["agree", "refuse", "implement", "restore"].includes(sub) && !current };
+            return { sub, label: detail ? `${sub} (${detail})` : sub, asksSpec: ["agree", "refuse", "implement", "restore", "obsolete"].includes(sub) && !current };
           });
           const pick = await ctx.ui.select("Spec mode", entries.map((e) => e.label));
           const entry = entries.find((e) => e.label === pick);
@@ -442,7 +480,16 @@ export default function specMode(pi: ExtensionAPI) {
           if (!choices.length) return notify(ctx, PICKER_EMPTY[menuSub] ?? "No spec to pick.", "warning");
           const which = await pickSpec(ctx, `${menuSub}: which spec?`, choices.map((c) => c.label));
           const arg = choices.find((c) => c.label === which)?.arg;
-          return arg ? run(`${menuSub} ${arg}`, ctx) : undefined;
+          if (!arg) return;
+          if (menuSub === "obsolete") {
+            // A replacement is any live spec but this one; none is a valid answer.
+            const none = "none (no replacement)";
+            const others = specChoices(specsAbs(ctx)).filter((c) => (c.folder === "" || c.folder === "Implemented") && c.arg !== arg);
+            const by = await pickSpec(ctx, `obsolete ${arg}: replaced by which spec?`, [none, ...others.map((c) => c.label)]);
+            if (by === undefined) return;
+            return run(`obsolete ${arg} ${others.find((c) => c.label === by)?.arg ?? ""}`.trim(), ctx);
+          }
+          return run(`${menuSub} ${arg}`, ctx);
         }
         case "start": {
           if (!idle) return busy();
@@ -464,6 +511,10 @@ export default function specMode(pi: ExtensionAPI) {
           return idle ? refuse(ctx, rest) : busy();
         case "restore":
           return idle ? restoreRefused(ctx, rest) : busy();
+        case "obsolete":
+          return idle ? obsolete(ctx, rest) : busy();
+        case "purge":
+          return idle ? purge(ctx) : busy();
         case "list": {
           const rows = specTable(specsAbs(ctx), today());
           return notify(ctx, rows.length ? [`Specs in ${settings.specsDir}/:`, ...rows].join("\n") : `No spec in ${settings.specsDir}/ yet.`);
@@ -555,8 +606,8 @@ export default function specMode(pi: ExtensionAPI) {
     if (!SPEC_FILE.test(basename(p)) || !isInside(settings.specsDir, ctx.cwd, p)) return;
     const abs = resolve(ctx.cwd, p);
     let md = readFileSync(abs, "utf8");
-    // Refused wins over the "back to Draft" rules below.
-    if (getField(md, "Status") === "Refused") {
+    // Refused and Obsolete win over the "back to Draft" rules below.
+    if (["Refused", "Obsolete"].includes(getField(md, "Status") ?? "")) {
       sweep(ctx);
       return;
     }

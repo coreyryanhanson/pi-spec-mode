@@ -5,10 +5,10 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 // `i`: on a case-insensitive disk (macOS, Windows) `x.MD` is the same file as `x.md`.
 export const SPEC_FILE = /^(\d{4})_spec_(.+)\.md$/i;
 
-/** Refused specs (in `Refused/`) are left out unless asked for: only numbering needs them. */
-export function listSpecs(specsDir: string, withRefused = false): string[] {
+/** Refused and obsolete specs (in `Refused/`, `Obsolete/`) are left out unless asked for: only numbering and the archive commands need them. */
+export function listSpecs(specsDir: string, withArchived = false): string[] {
   const out: string[] = [];
-  for (const dir of [specsDir, join(specsDir, "Implemented"), ...(withRefused ? [join(specsDir, "Refused")] : [])]) {
+  for (const dir of [specsDir, join(specsDir, "Implemented"), ...(withArchived ? [join(specsDir, "Refused"), join(specsDir, "Obsolete")] : [])]) {
     if (!existsSync(dir)) continue;
     // A linked spec is skipped: reading, refusing or moving it would write to the link's target, outside the specs folder.
     for (const f of readdirSync(dir)) if (SPEC_FILE.test(f) && !lstatSync(join(dir, f)).isSymbolicLink()) out.push(join(dir, f));
@@ -22,10 +22,10 @@ export function nextSpecNumber(specsDir: string): string {
 }
 
 /** Accepts `NNNN`, `NNNN_spec_xxx.md`, `spec_xxx.md`, `xxx`. */
-export function resolveSpec(specsDir: string, arg: string, withRefused = false): string | undefined {
+export function resolveSpec(specsDir: string, arg: string, withArchived = false): string | undefined {
   const a = arg.trim().replace(/\.md$/, "").replace(/^spec_/, "");
   if (!a) return undefined;
-  return listSpecs(specsDir, withRefused).find((p) => {
+  return listSpecs(specsDir, withArchived).find((p) => {
     const m = SPEC_FILE.exec(basename(p))!;
     return a === m[1] || a === `${m[1]}_spec_${m[2]}` || a === m[2] || (/^\d{1,4}$/.test(a) && Number(a) === Number(m[1]));
   });
@@ -83,7 +83,7 @@ export function verifyQueue(specsDir: string, today: string, count = 2): string[
   return pick.every((r) => r.d === today) ? [] : pick.map((r) => r.p);
 }
 
-/** Every spec, Refused/ included, by number: what /spec list and the picker show. */
+/** Every spec, Refused/ and Obsolete/ included, by number: what /spec list and the picker show. */
 function specRows(specsDir: string) {
   return listSpecs(specsDir, true)
     .sort((a, b) => basename(a).localeCompare(basename(b)))
@@ -91,12 +91,12 @@ function specRows(specsDir: string) {
       const md = readFileSync(p, "utf8");
       const [, num, name] = SPEC_FILE.exec(basename(p))!;
       const dir = basename(dirname(p));
-      const folder: SpecChoice["folder"] = dir === "Implemented" || dir === "Refused" ? dir : "";
+      const folder: SpecChoice["folder"] = dir === "Implemented" || dir === "Refused" || dir === "Obsolete" ? dir : "";
       return { num, name, status: getField(md, "Status") || "?", folder, verified: getField(md, "Last verified") || "" };
     });
 }
 
-/** One line per spec, Refused/ included: number, Status, Last verified with its age, name. */
+/** One line per spec, Refused/ and Obsolete/ included: number, Status, Last verified with its age, name. */
 export function specTable(specsDir: string, today: string): string[] {
   return specRows(specsDir).map(({ num, name, status, verified: d }) => {
     const age = /^\d{4}-\d{2}-\d{2}$/.test(d) ? ` (${Math.max(0, Math.round((Date.parse(today) - Date.parse(d)) / 864e5))} d ago)` : "";
@@ -108,12 +108,12 @@ export function specTable(specsDir: string, today: string): string[] {
 export interface SpecChoice {
   num: string;
   status: string;
-  folder: "" | "Implemented" | "Refused";
+  folder: "" | "Implemented" | "Refused" | "Obsolete";
   label: string; // what the picker shows
   arg: string; // what the command accepts: the number, which is unique
 }
 
-/** One picker entry per spec, Refused/ included: `0001 · Agreed · login`. */
+/** One picker entry per spec, Refused/ and Obsolete/ included: `0001 · Agreed · login`. */
 export function specChoices(specsDir: string): SpecChoice[] {
   return specRows(specsDir).map(({ num, name, status, folder }) => ({ num, status, folder, label: `${num} · ${status} · ${name}`, arg: num }));
 }
@@ -126,18 +126,32 @@ export function pickerMove(at: number, count: number, key: "up" | "down"): numbe
 export const REFUSED_BANNER = (date: string) =>
   `> **REFUSED on ${date}: ignore this spec.** Kept for reference only; it is not a requirement: do not implement, verify or extend it.`;
 
-/** Sets Status to Refused, puts the banner on top and moves the spec to `Refused/`. Returns the new path. */
-export function refuseSpec(specsDir: string, path: string, date: string): string {
-  const dest = join(specsDir, "Refused", basename(path));
+export const OBSOLETE_BANNER = (date: string, replacedBy?: string) =>
+  `> **OBSOLETE on ${date}${replacedBy ? `, replaced by ${replacedBy}` : ""}: ignore this spec.** It no longer describes the product: do not read, implement, verify or extend it.`;
+
+/** Sets Status to the folder's name, puts the banner on top and moves the spec to that folder. Returns the new path. */
+function archiveSpec(specsDir: string, path: string, folder: "Refused" | "Obsolete", banner: string): string {
+  const dest = join(specsDir, folder, basename(path));
   if (existsSync(dest)) throw new Error(`${dest} already exists`);
-  mkdirSync(join(specsDir, "Refused"), { recursive: true });
-  const md = setField(stripBanner(readFileSync(path, "utf8")), "Status", "Refused");
-  writeFileSync(path, `${REFUSED_BANNER(date)}\n\n${md}`);
+  mkdirSync(join(specsDir, folder), { recursive: true });
+  const md = setField(stripBanner(readFileSync(path, "utf8")), "Status", folder);
+  writeFileSync(path, `${banner}\n\n${md}`);
   renameSync(path, dest);
   return dest;
 }
 
-const stripBanner = (md: string) => md.replace(/^> \*\*REFUSED on [^\n]*\n\n?/, "");
+export const refuseSpec = (specsDir: string, path: string, date: string) => archiveSpec(specsDir, path, "Refused", REFUSED_BANNER(date));
+
+/** An implemented spec replaced (or dropped): to `Obsolete/`, with the replacement's file name in the banner. */
+export const obsoleteSpec = (specsDir: string, path: string, date: string, replacedBy?: string) =>
+  archiveSpec(specsDir, path, "Obsolete", OBSOLETE_BANNER(date, replacedBy));
+
+const stripBanner = (md: string) => md.replace(/^> \*\*(REFUSED|OBSOLETE) on [^\n]*\n\n?/, "");
+
+/** The specs `/spec purge` deletes: spec files directly in `Obsolete/`, never a link (listSpecs skips them). */
+export function obsoleteSpecs(specsDir: string): string[] {
+  return listSpecs(specsDir, true).filter((p) => dirname(p) === join(specsDir, "Obsolete"));
+}
 
 /** Undoes refuseSpec: back to the specs folder as Draft, to be agreed again. Returns the new path. */
 export function restoreSpec(specsDir: string, path: string): string {
@@ -148,11 +162,12 @@ export function restoreSpec(specsDir: string, path: string): string {
   return dest;
 }
 
-/** Moves to `Refused/` the specs whose Status was set to Refused by hand (or by the agent). Returns the new paths. */
-export function sweepRefused(specsDir: string, date: string): string[] {
-  return listSpecs(specsDir)
-    .filter((p) => getField(readFileSync(p, "utf8"), "Status") === "Refused")
-    .map((p) => refuseSpec(specsDir, p, date));
+/** Moves to `Refused/` or `Obsolete/` the specs whose Status was set to Refused or Obsolete by hand (or by the agent). Returns the new paths. */
+export function sweepArchived(specsDir: string, date: string): string[] {
+  return listSpecs(specsDir).flatMap((p) => {
+    const status = getField(readFileSync(p, "utf8"), "Status");
+    return status === "Refused" ? [refuseSpec(specsDir, p, date)] : status === "Obsolete" ? [obsoleteSpec(specsDir, p, date)] : [];
+  });
 }
 
 export function isInside(dir: string, cwd: string, p: string): boolean {

@@ -25,10 +25,12 @@ pi -e ./                           # try a local checkout
 | `/spec` | Menu fitted to the current state, listing the same commands as `/spec ` + Tab (with a short detail in parentheses); implement, restore, and agree or refuse with no spec in progress, then pick the spec from a list of the ones they accept (↑ on the first entry jumps to the last, ↓ on the last back to the first; type the number instead if you prefer: `/spec implement 0003`) |
 | `/spec start` | Enter spec mode, send nothing |
 | `/spec <request>` | Enter spec mode and send the request. A request may start with a command word (`/spec verify that login works offline`); `/spec agree` or `/spec verify` followed by a spec number or file name is always the command, even when no spec matches |
-| `/spec list` | Every spec, refused ones included: number, `Status`, `Last verified` and how many days ago |
+| `/spec list` | Every spec, refused and obsolete ones included: number, `Status`, `Last verified` and how many days ago |
 | `/spec agree [spec]` | Set the spec shown in the footer to `Agreed` and leave spec mode; with a spec name, agree that `Draft` spec (`/spec agree 0003`) whatever the mode, without closing the spec being written |
 | `/spec refuse [spec]` | Set a spec (default: the one in the footer) to `Refused` and move it to `specs/Refused/`: kept, but ignored by `/spec verify` and the agent. Refusing the spec in the footer leaves spec mode |
 | `/spec restore <spec>` | Move a refused spec back to `specs/` as `Draft` |
+| `/spec obsolete <spec> [replacement]` | An implemented spec no longer true (replaced by another one, or dropped): set it to `Obsolete` and move it to `specs/Obsolete/`, with a banner naming the replacement. Ignored by `/spec verify`, and the agent is told never to read it (spec mode, verify and `/spec implement`). From the `/spec` menu, pick the spec, then its replacement or `none`. A spec never implemented is refused instead |
+| `/spec purge` | Delete every spec in `specs/Obsolete/`, after a confirmation listing them; never without an interactive UI |
 | `/spec verify` | Check the `verifyCount` specs verified longest ago against the code |
 | `/spec verify <spec>` | Check one spec against the code, even if already verified today |
 | `/spec implement <spec>` | Hand an `Agreed` spec to plan mode |
@@ -38,7 +40,7 @@ pi -e ./                           # try a local checkout
 
 While in spec mode the footer shows `✎ spec-mode` in blue (then `✎ spec-mode 0003 · Draft`); nothing when off. The agent can read the whole project, run only read-only shell commands, and write only Markdown files inside the specs folder. Before calling `spec_complete`, it checks the new spec against existing ones: it sees each spec's title and Goal sentence only, reads in full the `Agreed` and `Implemented` specs on the same subject, and asks about any contradicting rule. This keeps the context small but is not exhaustive: a conflicting rule in a spec whose title and goal look unrelated is missed (`/spec verify` remains the safety net). It asks decisions through `spec_question` and calls `spec_complete` when the spec is ready, which opens an **Agree / Keep discussing / Leave** menu.
 
-Specs live in `specs/NNNN_spec_<feature>.md`; implemented ones move to `specs/Implemented/`, refused ones to `specs/Refused/` (also when you set `Status` to `Refused` by hand, which leaves spec mode if it was the spec being written).
+Specs live in `specs/NNNN_spec_<feature>.md`; implemented ones move to `specs/Implemented/`, refused ones to `specs/Refused/` (also when you set `Status` to `Refused` by hand, which leaves spec mode if it was the spec being written), obsolete ones to `specs/Obsolete/` (also when you set `Status` to `Obsolete` by hand). Obsolete specs keep their number: a new spec never reuses it, even after `/spec purge`.
 
 ```mermaid
 flowchart LR
@@ -49,9 +51,11 @@ flowchart LR
     Draft -->|/spec refuse| Refused
     Agreed -->|/spec refuse| Refused
     Refused["<b>Refused</b><br/>specs/Refused/<br/>skipped by /spec verify"] -->|/spec restore| Draft
+    Implemented -->|"/spec obsolete,<br/>replaced or dropped"| Obsolete["<b>Obsolete</b><br/>specs/Obsolete/<br/>skipped by /spec verify,<br/>never read by the agent"]
+    Obsolete -->|/spec purge| Deleted(( ))
 ```
 
-`/spec verify` runs over every spec outside `Refused/`, oldest check first, and fixes a spec that drifted from the code. An `Agreed` spec it had to edit goes back to `Draft`, and the run ends by asking you, once per spec changed that way, whether to agree it again (`Agree again` / `Keep Draft`); a spec only stamped `Last verified` stays `Agreed` and is not offered, and so is a spec that was already `Draft`. Answering `Keep Draft` is not final: `/spec agree <spec>` agrees it later.
+`/spec verify` runs over every spec outside `Refused/` and `Obsolete/`, oldest check first, and fixes a spec that drifted from the code. An `Agreed` spec it had to edit goes back to `Draft`, and the run ends by asking you, once per spec changed that way, whether to agree it again (`Agree again` / `Keep Draft`); a spec only stamped `Last verified` stays `Agreed` and is not offered, and so is a spec that was already `Draft`. Answering `Keep Draft` is not final: `/spec agree <spec>` agrees it later.
 
 ```mermaid
 flowchart LR
@@ -118,6 +122,7 @@ npm run typecheck
 
 - **Conflict check depends on section names.** The existing specs are summarised by their H1 title and the first line of a section named `Goal` (with or without a number, e.g. `## 2. Goal`). If your template renames it (`## Objectif`, `## Purpose`…), each spec is listed by its title only, and conflicts are detected less reliably. Keep a heading named `Goal` in your template to get the full summary.
 - **A spec that is a symbolic link is ignored.** `/spec list`, `/spec agree`, `/spec verify`, `/spec refuse` and the sweep of refused specs skip it: acting on it would write to the link's target, outside the specs folder. Keep the spec file itself in the specs folder.
+- **"Never read an obsolete spec" is a model instruction, not code.** The agent can still open a file in `specs/Obsolete/`; the banner at the top of each one tells it to ignore it. Run `/spec purge` to be sure.
 - **Conflict check is a model instruction, not code.** The agent is asked to read the related specs and report contradictions; nothing enforces that it does. `/spec verify` remains the safety net.
 
 ## Changelog

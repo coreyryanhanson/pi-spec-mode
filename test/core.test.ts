@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { test } from "node:test";
 import {
-  emptySections, getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber, pickerMove,
-  refuseSpec, resolveSpec, restoreSpec, setField, settingError, specChoices, specSummary, specTable, sweepRefused, verifyQueue, withSetting,
+  emptySections, getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber, obsoleteSpec, obsoleteSpecs, pickerMove,
+  refuseSpec, resolveSpec, restoreSpec, setField, settingError, specChoices, specSummary, specTable, sweepArchived, verifyQueue, withSetting,
 } from "../src/core.ts";
 
 const template = readFileSync(new URL("../templates/spec_template.md", import.meta.url), "utf8");
@@ -105,8 +105,40 @@ test("refused spec: restore undoes it, a hand-set Refused status is swept", () =
   const back = restoreSpec(dir, refuseSpec(dir, join(dir, "0001_spec_a.md"), "2026-11-12"));
   assert.equal(readFileSync(back, "utf8"), spec("Draft", ""));
   assert.ok(resolveSpec(dir, "a"));
-  assert.deepEqual(sweepRefused(dir, "2026-11-12").map((p) => p.split("/").slice(-2).join("/")), ["Refused/0002_spec_b.md"]);
+  assert.deepEqual(sweepArchived(dir, "2026-11-12").map((p) => p.split("/").slice(-2).join("/")), ["Refused/0002_spec_b.md"]);
   assert.ok(resolveSpec(dir, "b", true)?.includes("Refused"));
+});
+
+test("obsolete spec: banner names the replacement, status, moved, skipped by verify and resolve, still numbered", () => {
+  const dir = specsDir({ "Implemented/0001_spec_a.md": spec("Implemented", ""), "0002_spec_b.md": spec("Agreed", "2026-01-01") });
+  const dest = obsoleteSpec(dir, join(dir, "Implemented/0001_spec_a.md"), "2026-11-23", "0002_spec_b.md");
+  assert.ok(dest.endsWith("Obsolete/0001_spec_a.md") && !existsSync(join(dir, "Implemented/0001_spec_a.md")));
+  const md = readFileSync(dest, "utf8");
+  assert.match(md, /^> \*\*OBSOLETE on 2026-11-23, replaced by 0002_spec_b\.md: ignore this spec\.\*\*/);
+  assert.equal(getField(md, "Status"), "Obsolete");
+  assert.deepEqual(verifyQueue(dir, "2026-11-23").map((p) => basename(p)), ["0002_spec_b.md"]);
+  assert.equal(resolveSpec(dir, "a"), undefined);
+  assert.ok(resolveSpec(dir, "a", true)?.includes("Obsolete"));
+  assert.equal(nextSpecNumber(dir), "0003");
+  // A second spec of the same name never overwrites the archived one.
+  writeFileSync(join(dir, "Implemented/0001_spec_a.md"), spec("Implemented", ""));
+  assert.throws(() => obsoleteSpec(dir, join(dir, "Implemented/0001_spec_a.md"), "2026-11-23"), /already exists/);
+});
+
+test("obsolete spec: without a replacement the banner says none, a hand-set Obsolete status is swept", () => {
+  const dir = specsDir({ "Implemented/0001_spec_a.md": spec("Obsolete", "") });
+  const [dest] = sweepArchived(dir, "2026-11-23");
+  assert.ok(dest.endsWith("Obsolete/0001_spec_a.md"));
+  assert.match(readFileSync(dest, "utf8"), /^> \*\*OBSOLETE on 2026-11-23: ignore/);
+});
+
+test("obsoleteSpecs lists only spec files in Obsolete/, never a link or another file", () => {
+  const dir = specsDir({ "0002_spec_live.md": spec("Draft", "") });
+  mkdirSync(join(dir, "Obsolete"));
+  writeFileSync(join(dir, "Obsolete/0001_spec_old.md"), spec("Obsolete", ""));
+  writeFileSync(join(dir, "Obsolete/notes.md"), "");
+  symlinkSync(join(dir, "0002_spec_live.md"), join(dir, "Obsolete/0003_spec_link.md"));
+  assert.deepEqual(obsoleteSpecs(dir).map((p) => basename(p)), ["0001_spec_old.md"]);
 });
 
 test("specTable lists every spec with status and verification age, Refused/ included", () => {

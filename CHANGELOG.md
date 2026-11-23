@@ -4,6 +4,9 @@
 
 ### Added
 
+- `/spec obsolete <spec> [replacement]`: an implemented spec that no longer holds (replaced by another spec, or dropped) is set to `Obsolete` and moved to `specs/Obsolete/`, with a banner naming its replacement. `/spec verify` skips it, the agent is told never to read it (spec mode, verify run and `/spec implement`), and its number is never reused. Setting `Status | Obsolete` by hand moves it the same way. Only a spec in `specs/Implemented/` can become obsolete; a spec never implemented is refused instead.
+- `/spec purge` deletes the specs in `specs/Obsolete/` after a confirmation listing them. Without an interactive UI it deletes nothing.
+
 - In the spec picker of the `/spec` menu, ↑ on the first spec jumps to the last one and ↓ on the last spec back to the first, so the newest specs are one key away.
 - `/spec settings` is now interactive: after showing the effective settings it opens a menu to change `specsDir`, `language`, `verifyCount` or `renameSession` and save it in the project or the global file. Invalid values are refused with the same rules as the files, other keys are kept, and a settings file that is not valid JSON is never overwritten.
 - `renamePlanSession` setting (off by default): `/spec implement` renames the session `spec NNNN planning` before handing spec `NNNN` to plan mode, whether the spec is typed or picked from the `/spec` menu.
