@@ -1,14 +1,13 @@
 # Changelog
 
-## unreleased
+## 1.0.0
 
 ### Added
 
 - `/spec obsolete <spec> [replacement]`: an implemented spec that no longer holds (replaced by another spec, or dropped) is set to `Obsolete` and moved to `specs/Obsolete/`, with a banner naming its replacement. `/spec verify` skips it, the agent is told never to read it (spec mode, verify run and `/spec implement`), and its number is never reused. Setting `Status | Obsolete` by hand moves it the same way. Only a spec in `specs/Implemented/` can become obsolete; a spec never implemented is refused instead.
 - `/spec purge` deletes the specs in `specs/Obsolete/` after a confirmation listing them. Without an interactive UI it deletes nothing. Their numbers stay taken: the highest one deleted is kept in `specs/.last_purged`.
-
 - In the spec picker of the `/spec` menu, ↑ on the first spec jumps to the last one and ↓ on the last spec back to the first, so the newest specs are one key away.
-- `/spec settings` is now interactive: after showing the effective settings it opens a menu to change `specsDir`, `language`, `verifyCount` or `renameSession` and save it in the project or the global file. Invalid values are refused with the same rules as the files, other keys are kept, and a settings file that is not valid JSON is never overwritten.
+- `/spec settings` is now interactive: after showing the effective settings it opens a menu to change `specsDir`, `language`, `verifyCount`, `renameSession` or `renamePlanSession` and save it in the project or the global file. Invalid values are refused with the same rules as the files, other keys are kept, and a settings file that is not valid JSON is never overwritten.
 - `renamePlanSession` setting (off by default): `/spec implement` renames the session `spec NNNN planning` before handing spec `NNNN` to plan mode, whether the spec is typed or picked from the `/spec` menu.
 - `renameSession` setting (off by default): the session that creates a spec is renamed `spec NNNN creation`, so `/resume` shows which spec it wrote.
 - `/spec verify` ends by asking whether to agree again each spec it changed: an `Agreed` spec that had to be fixed goes back to `Draft`, and you get one question per spec that changed that way (`Agree again` / `Keep Draft`). A spec only stamped `Last verified` stays `Agreed` and is not offered, and so is a spec that was already `Draft`.
@@ -19,7 +18,6 @@
 - The `/spec` menu uses the command words of `/spec ` + Tab (`exit (leave spec mode)` instead of “Leave spec mode”, `implement (hand a spec to plan mode)`...) and offers exactly the same commands in every state: `agree` outside spec mode (picks a Draft spec), `template` in spec mode and `exit` during a verify run are now in both.
 - The footer reads `✎ spec-mode` and is blue instead of violet.
 - Spec mode now closes only on the spec it was opened for: `/spec agree 0003` on another spec agrees it and keeps the session that is writing `0004` running, where it used to close. Conversely `/spec refuse` (or a hand-set `Status | Refused`) on the spec in the footer leaves spec mode instead of leaving it open with nothing left to write.
-
 - `/spec template` no longer just copies the generic template: it warns you first, then the agent quickly analyses the project (type, stack, domain) and rewrites `specs/spec_template.md` for it, and asks you to reread the result — `/spec agree` checks every spec against that file. Answer `No` and you are offered the plain copy instead. The agent may change the template only during this run.
 
 ### Fixed
