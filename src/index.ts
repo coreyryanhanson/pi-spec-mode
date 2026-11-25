@@ -627,7 +627,7 @@ export default function specMode(pi: ExtensionAPI) {
       if (event.toolName === "write" || event.toolName === "edit") {
         const p = String(event.input.path ?? "");
         // pi strips a leading `@` mention marker from a tool path before writing: judge the path it will actually write.
-        // The `~/` and `file://` forms pi also rewrites are left alone: rare in a write call, and never worth a second rewriter.
+        // ponytail: only `@` is stripped; a `~/` or `file://` path (which pi also rewrites) or a symlink to the template slips past the guard. Best effort, as the README says of yolo; upgrade to pi's own path resolver if one gets exported.
         const norm = p.startsWith("@") ? p.slice(1) : p;
         const abs = resolve(ctx.cwd, norm);
         // The template guard survives yolo: everything else may be written, the yardstick of /spec agree may not.
