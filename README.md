@@ -43,7 +43,7 @@ Commands that take a spec accept its number (`/spec agree 0003`) or file name. T
 ### In spec mode
 
 - The footer shows `✎ spec-mode 0003 · Draft`.
-- The agent reads the whole project, runs only read-only shell commands, and writes only Markdown files in the specs folder.
+- The agent reads the whole project, runs only read-only shell commands, and writes only Markdown files in the specs folder — unless the `yolo` setting is on (see Settings).
 - It asks you decisions through `spec_question`, and calls `spec_complete` when the spec is ready: you then pick **Agree**, **Keep discussing** or **Leave**.
 - Before that, it checks the new spec against the existing ones (titles and goals, plus a full read of related `Agreed` / `Implemented` specs) and asks about any contradiction.
 - It cannot agree a spec or mark one `Implemented` itself; that stays your call.
@@ -118,7 +118,8 @@ Global: `~/.pi/agent/pi-spec-mode.json`. Per project (trusted projects only): `.
   "language": "English",
   "verifyCount": 2,
   "renameSession": false,
-  "renamePlanSession": false
+  "renamePlanSession": false,
+  "yolo": false
 }
 ```
 
@@ -129,8 +130,11 @@ Global: `~/.pi/agent/pi-spec-mode.json`. Per project (trusted projects only): `.
 | `verifyCount` | Specs checked per `/spec verify` run |
 | `renameSession` | Rename the session `spec NNNN creation` when a spec is created |
 | `renamePlanSession` | Rename the session `spec NNNN planning` on `/spec implement` |
+| `yolo` | Disable spec mode's tool gating (any tool, any bash command, writes anywhere). Default false |
 
 An invalid value is ignored with a warning and the default is used.
+
+**Warning:** with `yolo` true, the agent can edit any file and run any command — the "enforced" promise of spec mode does not apply, and specs agreed in such a session were produced without the usual guardrails. The spec template stays protected from the write and edit tools: `/spec agree` measures every spec against it. The `Status` rules, `/spec verify` and `spec_complete` still apply to write and edit tool calls; shell writes to a spec file are not intercepted.
 
 ## Develop
 
@@ -144,7 +148,7 @@ npm run typecheck
 
 - **The conflict check is a model instruction, not code**, and only sees each spec's title and `Goal` section. A conflict hidden in an unrelated-looking spec can be missed; `/spec verify` is the safety net. Keep a `Goal` heading in your template.
 - **"Never read an obsolete spec" is a model instruction too.** Run `/spec purge` to be sure.
-- **Symlinked specs are ignored**, so nothing is written outside the specs folder.
+- **Symlinked specs are ignored**, so nothing is written outside the specs folder (unless `yolo` is on).
 
 ## Changelog
 

@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ExtensionAPI, type ExtensionContext, ExtensionSelectorComponent, getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -23,6 +23,7 @@ interface Settings {
   verifyCount: number;
   renameSession: boolean;
   renamePlanSession: boolean;
+  yolo: boolean;
 }
 
 const STATE_ENTRY = "spec-mode";
@@ -37,7 +38,7 @@ const MENU_DETAIL: Record<string, string> = {
   restore: "a refused spec", obsolete: "an implemented spec replaced", purge: "delete obsolete specs",
   template: "create the project template", exit: "leave spec mode",
 };
-const DEFAULT_SETTINGS: Settings = { specsDir: "specs", language: "English", verifyCount: 2, renameSession: false, renamePlanSession: false };
+const DEFAULT_SETTINGS: Settings = { specsDir: "specs", language: "English", verifyCount: 2, renameSession: false, renamePlanSession: false, yolo: false };
 /** Menu action → what to say when its picker has nothing to offer. */
 const PICKER_EMPTY: Record<string, string> = {
   implement: "No Agreed spec to implement: agree one first (/spec agree).",
@@ -88,6 +89,13 @@ export default function specMode(pi: ExtensionAPI) {
   const noSpec = (arg: string) => `No spec "${arg}" in ${settings.specsDir}/ or ${settings.specsDir}/Implemented/`;
 
   const localTemplate = (ctx: ExtensionContext) => join(specsAbs(ctx), "spec_template.md");
+
+  /** Blocks a write to the template, which /spec agree measures every spec against: the agent must not weaken it.
+   *  Lower-cased: macOS and Windows ignore case. `/spec template` runs outside spec mode, so no exception is needed here. */
+  const templateGuard = (ctx: ExtensionContext, abs: string) =>
+    abs.toLowerCase() === localTemplate(ctx).toLowerCase()
+      ? { block: true, reason: `Spec mode: ${rel(ctx, abs)} is the user's template and cannot be changed in spec mode. Run /spec template outside spec mode to have it adapted, or edit it yourself.` }
+      : undefined;
 
   function template(ctx: ExtensionContext): string {
     return readFileSync(existsSync(localTemplate(ctx)) ? localTemplate(ctx) : BUNDLED_TEMPLATE, "utf8");
@@ -219,7 +227,7 @@ export default function specMode(pi: ExtensionAPI) {
     if (state.mode === "verify") return "A spec verify run is in progress.";
     if (otherWorkflowActive(ctx)) return "Plan mode (or another workflow) is active: finish or exit it before starting spec mode.";
     save(ctx, { mode: "spec" });
-    notify(ctx, `Spec mode on — writes limited to ${settings.specsDir}/`);
+    notify(ctx, settings.yolo ? "Spec mode on — yolo: tool restrictions are off" : `Spec mode on — writes limited to ${settings.specsDir}/`);
     if (!existsSync(localTemplate(ctx)))
       notify(ctx, `Using the generic spec template. Run /spec template to create your own in ${settings.specsDir}/ and adapt it to your project.`, "warning");
     return undefined;
@@ -592,7 +600,7 @@ export default function specMode(pi: ExtensionAPI) {
       return;
     }
     if (state.mode === "verify") {
-      sections[SECTION] = verifyContract(settings.specsDir, today(), state.targets ?? []);
+      sections[SECTION] = verifyContract(settings.specsDir, today(), state.targets ?? [], settings.yolo);
       return;
     }
     if (sweep(ctx)) return; // the sweep refused the spec being written: no spec contract this turn
@@ -608,11 +616,30 @@ export default function specMode(pi: ExtensionAPI) {
       template: template(ctx),
       specs,
       current: state.spec,
+      yolo: settings.yolo,
     });
   });
 
   pi.on("tool_call", async (event, ctx) => {
     if (state.mode === "off" || READ_TOOLS.has(event.toolName)) return;
+    if (settings.yolo) {
+      // yolo skips the checks, but a spec-file write still records its before-content for the verify restore rules.
+      if (event.toolName === "write" || event.toolName === "edit") {
+        const p = String(event.input.path ?? "");
+        // pi strips a leading `@` mention marker from a tool path before writing: judge the path it will actually write.
+        // The `~/` and `file://` forms pi also rewrites are left alone: rare in a write call, and never worth a second rewriter.
+        const norm = p.startsWith("@") ? p.slice(1) : p;
+        const abs = resolve(ctx.cwd, norm);
+        // The template guard survives yolo: everything else may be written, the yardstick of /spec agree may not.
+        const blocked = templateGuard(ctx, abs);
+        if (blocked) return blocked;
+        if (isInside(settings.specsDir, ctx.cwd, norm) && SPEC_FILE.test(basename(abs))) {
+          event.input.path = abs;
+          beforeEdit.set(event.toolCallId, existsSync(abs) ? readFileSync(abs, "utf8") : "");
+        }
+      }
+      return;
+    }
     if (event.toolName === "bash") {
       const cmd = String(event.input.command ?? "");
       if (isReadOnlyCommand(cmd)) return;
@@ -636,10 +663,8 @@ export default function specMode(pi: ExtensionAPI) {
       // Only the part under the specs folder is checked: the project's own path may contain a `-folder`.
       if (relative(specsAbs(ctx), abs).split(/[\\/]/).some((s) => s.startsWith("-")))
         return { block: true, reason: `Spec mode: file and folder names cannot start with "-".` };
-      // /spec agree checks a spec against the template: the agent must not be able to weaken it. Lower-cased: macOS and Windows ignore case.
-      // `/spec template` runs outside spec mode, so no exception is needed here.
-      if (abs.toLowerCase() === localTemplate(ctx).toLowerCase())
-        return { block: true, reason: `Spec mode: ${rel(ctx, abs)} is the user's template and cannot be changed in spec mode. Run /spec template outside spec mode to have it adapted, or edit it yourself.` };
+      const blocked = templateGuard(ctx, abs);
+      if (blocked) return blocked;
       // pi rewrites `@x`, `~/x`, `file://…` and (on Windows) `/c/x` before writing: give it the absolute path that was just checked.
       event.input.path = abs;
       beforeEdit.set(event.toolCallId, existsSync(abs) ? readFileSync(abs, "utf8") : "");
