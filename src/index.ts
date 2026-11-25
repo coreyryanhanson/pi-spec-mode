@@ -488,7 +488,7 @@ export default function specMode(pi: ExtensionAPI) {
       // that matches nothing is too, so a typo gets "No spec" instead of starting spec mode.
       // `/spec verify 3 5` names several.
       const refs = sub === "verify" ? specRefs(specsAbs(ctx), rest) : undefined;
-      const namesSpec = !!refs || (sub === "agree" && rest !== "" && (/^\d{1,4}$|^\d{4}_spec_.+\.md$/i.test(rest) || !!resolveSpec(specsAbs(ctx), rest)));
+      const namesSpec = !!refs || (sub === "agree" && specRefs(specsAbs(ctx), rest)?.length === 1);
       const isRequest = rest !== "" && !namesSpec && ["start", "list", "exit", "off", "agree", "verify", "verify_oldest", "purge", "template", "settings"].includes(sub);
 
       // In spec mode, refuse and verify only apply to the spec in progress; the management commands wait for /spec exit.
