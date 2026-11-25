@@ -305,6 +305,7 @@ export default function specMode(pi: ExtensionAPI) {
   }
 
   function implement(ctx: ExtensionContext, arg: string) {
+    if (state.mode === "verify") return notify(ctx, "A spec verify run is in progress.", "warning");
     const plan = pi.getCommands().find((c) => c.source === "extension" && /^plan(:\d+)?$/.test(c.name));
     if (!plan) return notify(ctx, "Implementing a spec needs plan mode: pi install npm:@narumitw/pi-plan-mode", "warning");
     if (!arg.trim()) return notify(ctx, "Which spec? /spec implement <number or name>", "warning");
@@ -501,8 +502,8 @@ export default function specMode(pi: ExtensionAPI) {
           return notify(ctx, `/spec ${sub} is not available in spec mode: /spec exit first.`, "warning");
       }
 
-      // Without a spec in progress, agree and refuse need one picked, like implement and restore.
-      const asksSpec = (s: string) => ["agree", "refuse", "verify", "implement", "restore", "obsolete"].includes(s) && !(["agree", "refuse", "verify"].includes(s) && state.spec) && !(s === "verify" && state.mode === "verify");
+      // Without a spec in progress, agree and refuse need one picked, like implement and restore; a verify run refuses them all without a picker.
+      const asksSpec = (s: string) => state.mode !== "verify" && ["agree", "refuse", "verify", "implement", "restore", "obsolete"].includes(s) && !(["agree", "refuse", "verify"].includes(s) && state.spec);
       /** Picks the spec from a list, then runs the same command as typing it with that spec. */
       const pickThenRun = async (s: string): Promise<void> => {
         const choices = specPicker(ctx, s);

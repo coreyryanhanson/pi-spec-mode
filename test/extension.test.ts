@@ -857,6 +857,22 @@ test("/spec menu picks a spec from a list instead of typing a number", async () 
   assert.deepEqual(empty.sent.user, []);
 });
 
+test("during a verify run, /spec <command> without a spec refuses without opening the picker", async () => {
+  const h = harness({ plan: true });
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs/Implemented"), { recursive: true });
+  mkdirSync(join(h.cwd, "specs/Refused"), { recursive: true });
+  writeFileSync(join(h.cwd, "specs/0001_spec_login.md"), "| Status | Agreed |\n");
+  writeFileSync(join(h.cwd, "specs/Implemented/0003_spec_done.md"), "| Status | Implemented |\n");
+  writeFileSync(join(h.cwd, "specs/Refused/0004_spec_old.md"), "| Status | Refused |\n");
+  await h.commands.spec.handler("verify 0001", h.ctx);
+  assert.equal(h.status(), "✎ spec-mode verify");
+  for (const sub of ["refuse", "implement", "restore", "obsolete"]) {
+    await h.commands.spec.handler(sub, h.ctx);
+    assert.deepEqual(h.offered, [], sub);
+    assert.match(h.notes.at(-1)!, /verify run is in progress/, sub);
+  }
+});
 test("/spec <command> without a spec opens the same picker as the menu", async () => {
   const setup = async (opts: { plan?: boolean; picks?: string[] }) => {
     const h = harness(opts);

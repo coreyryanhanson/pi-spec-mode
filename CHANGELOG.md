@@ -11,6 +11,7 @@
 
 - `/spec verify` and `/spec verify <spec>` sent the generic message "Verify the specs.": after a `/spec exit`, the agent read it as a normal-mode request and did not know which spec to check. The message now names the specs of the run and says the VERIFY contract applies.
 - `/spec verify` checked a `Draft` or `Agreed` spec against the code like an `Implemented` one, and reported every rule not built yet as unverified. Such a spec is now checked against the other specs (`Draft`, `Agreed` and `Implemented`) for contradictions, duplicates and missing dependencies; the code is read only where a rule states current behaviour.
+- `/spec implement <spec>` during a `/spec verify` run handed the spec to plan mode in the middle of the run. It is now refused like `refuse`, `restore` and `obsolete`, and none of them opens the spec picker during a run.
 
 ### Changed
 
