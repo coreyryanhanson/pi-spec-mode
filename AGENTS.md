@@ -41,7 +41,7 @@ npm test            # node --test test/*.test.ts
 
 ## Invariants — do not break these
 
-The security model is the product. An edit that relaxes one of these is a bug, not a feature. One opt-out exists: the `yolo` setting lifts the tool gating (the first two bullets) when the user turns it on; every other invariant holds unconditionally.
+The security model is the product. An edit that relaxes one of these is a bug, not a feature. One opt-out exists: the `yolo` setting lifts the tool gating (the first two bullets) when the user turns it on. The spec template stays guarded against the write and edit tools, but only best effort: bash, a `~/` or `file://` path, or a symlink can still reach it. In yolo the status rules likewise only see write and edit tool calls. Every other invariant holds unconditionally.
 
 - In spec mode the agent writes **only Markdown files inside the specs folder**; no symlink traversal (`isInside`, `lstat` checks), no write outside `specs/`.
 - The shell allowlist stays a **read-only** allowlist: unknown command → refused, glob/redirect/`-o file` style argument → refused. Prefer refusing to guessing.
