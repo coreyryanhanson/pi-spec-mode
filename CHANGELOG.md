@@ -1,6 +1,6 @@
 # Changelog
 
-## unreleased
+## 1.1.0
 
 ### Added
 
