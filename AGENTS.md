@@ -41,13 +41,13 @@ npm test            # node --test test/*.test.ts
 
 ## Invariants — do not break these
 
-The security model is the product. An edit that relaxes one of these is a bug, not a feature:
+The security model is the product. An edit that relaxes one of these is a bug, not a feature. One opt-out exists: the `yolo` setting lifts the tool gating (the first two bullets) when the user turns it on. The spec template stays guarded against the write and edit tools, but only best effort: bash, a `~/` or `file://` path, or a symlink can still reach it. In yolo the status rules likewise only see write and edit tool calls. Every other invariant holds unconditionally.
 
 - In spec mode the agent writes **only Markdown files inside the specs folder**; no symlink traversal (`isInside`, `lstat` checks), no write outside `specs/`.
 - The shell allowlist stays a **read-only** allowlist: unknown command → refused, glob/redirect/`-o file` style argument → refused. Prefer refusing to guessing.
 - The file pattern `NNNN_spec_<feature>.md`, the `Status` / `Last verified` header fields, and the `specs/Implemented/` + `specs/Refused/` + `specs/Obsolete/` moves keep working; hand-edited specs stay readable.
 - `/spec verify` never changes a spec's status; `spec_complete` stays the only way to close a spec.
-- Settings keys and defaults stay backward compatible (`specsDir`, `language`, `verifyCount`); an unknown/absent settings file must not throw.
+- Settings keys and defaults stay backward compatible (`specsDir`, `language`, `verifyCount`, `renameSession`, `renamePlanSession`, `yolo`); an unknown/absent settings file must not throw.
 - A spec describes behaviour, never code; don't hand-edit `specs/Implemented/`, it is a record.
 
 ## Docs

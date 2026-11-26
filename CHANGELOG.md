@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.0
+
+### Added
+
+- Verify the specs you choose: `/spec verify` (and `verify` in the `/spec` menu) opens a list where Enter ticks or unticks a spec and the first line starts the run. The `verifyCount` specs verified longest ago are ticked from the start, so Enter alone does what `/spec verify` did before; without an interactive UI it still checks them directly. `/spec verify_oldest` runs that check directly, without the list. `/spec verify 3 5` names several specs. In spec mode, `verify` checks the spec in progress and spec mode resumes after the run; verifying another spec there is refused.
+- `yolo` setting (off by default): spec mode stops blocking tools — the agent may use any tool, run any bash command and write anywhere. The `Status` rules and `/spec verify`'s restore behaviour still apply to write and edit tool calls (shell writes to a spec file are not intercepted), `spec_complete` is unchanged, the spec template stays protected from the write and edit tools so `/spec agree` keeps measuring against it, and the prompt tells the agent the restrictions are lifted instead of enforced.
+
+### Fixed
+
+- `/spec verify` and `/spec verify <spec>` sent the generic message "Verify the specs.": after a `/spec exit`, the agent read it as a normal-mode request and did not know which spec to check. The message now names the specs of the run and says the VERIFY contract applies.
+- `/spec verify` checked a `Draft` or `Agreed` spec against the code like an `Implemented` one, and reported every rule not built yet as unverified. Such a spec is now checked against the other specs (`Draft`, `Agreed` and `Implemented`) for contradictions, duplicates and missing dependencies; the code is read only where a rule states current behaviour.
+- `/spec implement <spec>` during a `/spec verify` run handed the spec to plan mode in the middle of the run. It is now refused like `refuse`, `restore` and `obsolete`, and none of them opens the spec picker during a run.
+
+### Changed
+
+- `/spec implement`, `/spec agree`, `/spec refuse`, `/spec restore` and `/spec obsolete` typed without a spec open the same spec picker as the `/spec` menu, where they used to stop on "Which spec?". Typing the spec (`/spec implement 0003`) works as before, `agree` and `refuse` still act on the spec in progress, and without an interactive UI the command still asks for the spec.
+- Spec mode is about the spec in progress: its `/spec` menu and completion only offer `list` and `exit`, plus `agree` and `refuse` once the spec is written, and both act on that spec. `/spec implement`, `restore`, `obsolete`, `purge`, `template`, `settings` and `/spec refuse <another spec>` are refused in spec mode with a hint to `/spec exit` first. `/spec agree <spec>` still agrees another Draft spec.
+
 ## 1.0.0
 
 ### Added

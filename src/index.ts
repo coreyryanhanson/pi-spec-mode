@@ -1,13 +1,13 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ExtensionAPI, type ExtensionContext, ExtensionSelectorComponent, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, listSpecs, missingSections,
-  nextSpecNumber, obsoleteSpec, obsoleteSpecs, pickerMove, purgeSpecs, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, settingError, specChoices, type SpecChoice, specSummary, specTable, sweepArchived, today, verifyQueue, withSetting,
+  nextSpecNumber, obsoleteSpec, obsoleteSpecs, pickerMove, purgeSpecs, refuseSpec, resolveSpec, restoreSpec, SPEC_FILE, setField, settingError, specChoices, specRefs, type SpecChoice, specSummary, specTable, sweepArchived, today, verifyQueue, withSetting,
 } from "./core.ts";
-import { implementRequest, NORMAL_CONTRACT, specContract, templateRequest, verifyContract } from "./prompts.ts";
+import { implementRequest, NORMAL_CONTRACT, specContract, templateRequest, verifyContract, verifyRequest } from "./prompts.ts";
 
 type Mode = "off" | "spec" | "verify";
 interface State {
@@ -23,6 +23,7 @@ interface Settings {
   verifyCount: number;
   renameSession: boolean;
   renamePlanSession: boolean;
+  yolo: boolean;
 }
 
 const STATE_ENTRY = "spec-mode";
@@ -30,14 +31,14 @@ const SECTION = "spec-mode";
 const MUTEX = "workflow:mutex:v1"; // shared with @narumitw/pi-plan-mode: only one agent workflow at a time
 const READ_TOOLS = new Set(["read", "grep", "find", "ls", "spec_question", "spec_complete"]);
 const BUNDLED_TEMPLATE = fileURLToPath(new URL("../templates/spec_template.md", import.meta.url));
-const USAGE = "/spec start | <request> | list | agree [spec] | refuse [spec] | restore <spec> | obsolete <spec> [replacement] | purge | verify [spec] | implement <spec> | template | exit | settings";
+const USAGE = "/spec start | <request> | list | agree [spec] | refuse [spec] | restore <spec> | obsolete <spec> [replacement] | purge | verify [spec...] | verify_oldest | implement <spec> | template | exit | settings";
 /** `/spec` menu detail shown after the command word, so the menu reads like the completion. */
 const MENU_DETAIL: Record<string, string> = {
-  start: "enter spec mode", verify: "check specs against the code", implement: "hand a spec to plan mode",
+  start: "enter spec mode", verify: "check specs against the code or each other", verify_oldest: "check the oldest verified specs", implement: "hand a spec to plan mode",
   restore: "a refused spec", obsolete: "an implemented spec replaced", purge: "delete obsolete specs",
   template: "create the project template", exit: "leave spec mode",
 };
-const DEFAULT_SETTINGS: Settings = { specsDir: "specs", language: "English", verifyCount: 2, renameSession: false, renamePlanSession: false };
+const DEFAULT_SETTINGS: Settings = { specsDir: "specs", language: "English", verifyCount: 2, renameSession: false, renamePlanSession: false, yolo: false };
 /** Menu action → what to say when its picker has nothing to offer. */
 const PICKER_EMPTY: Record<string, string> = {
   implement: "No Agreed spec to implement: agree one first (/spec agree).",
@@ -45,6 +46,7 @@ const PICKER_EMPTY: Record<string, string> = {
   agree: "No Draft spec to agree.",
   refuse: "No spec to refuse.",
   obsolete: "No implemented spec to mark obsolete.",
+  verify: "No spec to verify.",
 };
 
 export default function specMode(pi: ExtensionAPI) {
@@ -52,7 +54,7 @@ export default function specMode(pi: ExtensionAPI) {
   let settings = DEFAULT_SETTINGS;
   let session: object | undefined;
   let completeRequested = false;
-  let templateRun = false; // the agent may rewrite specs/spec_template.md during an explicit `/spec template` run
+  let templateRun = false; // an explicit `/spec template` run: reminds the user to reread the result when it ends
   const beforeEdit = new Map<string, string>(); // toolCallId of a write/edit in the specs folder → the file's content before it ("" for a new file)
 
   const specsAbs = (ctx: ExtensionContext) => resolve(ctx.cwd, settings.specsDir);
@@ -88,6 +90,13 @@ export default function specMode(pi: ExtensionAPI) {
 
   const localTemplate = (ctx: ExtensionContext) => join(specsAbs(ctx), "spec_template.md");
 
+  /** Blocks a write to the template, which /spec agree measures every spec against: the agent must not weaken it.
+   *  Lower-cased: macOS and Windows ignore case. `/spec template` runs outside spec mode, so no exception is needed here. */
+  const templateGuard = (ctx: ExtensionContext, abs: string) =>
+    abs.toLowerCase() === localTemplate(ctx).toLowerCase()
+      ? { block: true, reason: `Spec mode: ${rel(ctx, abs)} is the user's template and cannot be changed in spec mode. Run /spec template outside spec mode to have it adapted, or edit it yourself.` }
+      : undefined;
+
   function template(ctx: ExtensionContext): string {
     return readFileSync(existsSync(localTemplate(ctx)) ? localTemplate(ctx) : BUNDLED_TEMPLATE, "utf8");
   }
@@ -114,13 +123,27 @@ export default function specMode(pi: ExtensionAPI) {
     notify(ctx, `Created ${rel(ctx, dest)}: the agent adapts it to the project now — reread it carefully, /spec agree checks every spec against it.`);
   }
 
+  /** Ticks specs in a list (Enter toggles one) until the first line confirms: the ticked args in list order, or undefined on Esc. */
+  async function pickMany(ctx: ExtensionContext, title: string, choices: SpecChoice[], preset: string[]): Promise<string[] | undefined> {
+    const on = new Set(preset);
+    for (let at = 0; ; ) {
+      const labels = [`▶ verify ${on.size} selected`, ...choices.map((c) => `${on.has(c.arg) ? "[x]" : "[ ]"} ${c.label}`)];
+      const i = labels.indexOf((await pickSpec(ctx, title, labels, at)) ?? "");
+      if (i < 0) return undefined;
+      if (i === 0) return choices.filter((c) => on.has(c.arg)).map((c) => c.arg);
+      const arg = choices[i - 1].arg;
+      if (!on.delete(arg)) on.add(arg);
+      at = i;
+    }
+  }
+
   function specStatus(ctx: ExtensionContext, p: string): string | undefined {
     const abs = resolve(ctx.cwd, p);
     return existsSync(abs) ? getField(readFileSync(abs, "utf8"), "Status") : undefined;
   }
 
   /** pi's selector, except ↑ and ↓ wrap around the list; plain select outside the terminal UI. */
-  function pickSpec(ctx: ExtensionContext, title: string, labels: string[]): Promise<string | undefined> {
+  function pickSpec(ctx: ExtensionContext, title: string, labels: string[], start = 0): Promise<string | undefined> {
     if (ctx.mode !== "tui") return ctx.ui.select(title, labels);
     return ctx.ui.custom<string | undefined>((tui, _theme, kb, done) => {
       const list = new ExtensionSelectorComponent(title, labels, done, () => done(undefined), { tui });
@@ -134,6 +157,7 @@ export default function specMode(pi: ExtensionAPI) {
         else forward(key);
         if (move) at = pickerMove(at, labels.length, move);
       };
+      for (; at < start; at++) forward("j"); // reopened after a toggle: back on the line just toggled
       return list;
     });
   }
@@ -144,6 +168,7 @@ export default function specMode(pi: ExtensionAPI) {
     if (sub === "implement") return all.filter((c) => c.status === "Agreed");
     if (sub === "restore") return all.filter((c) => c.folder === "Refused");
     if (sub === "obsolete") return all.filter((c) => c.folder === "Implemented");
+    if (sub === "verify") return all.filter((c) => c.folder === "" || c.folder === "Implemented"); // what listSpecs, and so verify, accepts
     if (sub === "agree") return all.filter((c) => (c.folder === "" || c.folder === "Implemented") && c.status === "Draft");
     return all.filter((c) => c.folder === ""); // refuse resolves only in the specs folder
   }
@@ -202,7 +227,7 @@ export default function specMode(pi: ExtensionAPI) {
     if (state.mode === "verify") return "A spec verify run is in progress.";
     if (otherWorkflowActive(ctx)) return "Plan mode (or another workflow) is active: finish or exit it before starting spec mode.";
     save(ctx, { mode: "spec" });
-    notify(ctx, `Spec mode on — writes limited to ${settings.specsDir}/`);
+    notify(ctx, settings.yolo ? "Spec mode on — yolo: tool restrictions are off" : `Spec mode on — writes limited to ${settings.specsDir}/`);
     if (!existsSync(localTemplate(ctx)))
       notify(ctx, `Using the generic spec template. Run /spec template to create your own in ${settings.specsDir}/ and adapt it to your project.`, "warning");
     return undefined;
@@ -263,14 +288,15 @@ export default function specMode(pi: ExtensionAPI) {
   }
 
   /** Puts the session in a verify run; the caller sends the message that starts it. */
-  function startVerify(ctx: ExtensionContext, arg = ""): boolean {
+  function startVerify(ctx: ExtensionContext, refs: string[] = []): boolean {
     if (state.mode === "verify") return notify(ctx, "A verify run is already in progress.", "warning"), false;
     sweep(ctx);
     if (!listSpecs(specsAbs(ctx)).length) return notify(ctx, `No specs in ${settings.specsDir}/ to verify.`), false;
     // A named spec is verified even if already verified today: the user asked for it.
-    const one = arg && resolveSpec(specsAbs(ctx), arg);
-    if (arg && !one) return notify(ctx, noSpec(arg), "warning"), false;
-    const targets = one ? [one] : verifyQueue(specsAbs(ctx), today(), settings.verifyCount);
+    const named = refs.map((r) => resolveSpec(specsAbs(ctx), r));
+    const unknown = refs.find((_, i) => !named[i]);
+    if (unknown) return notify(ctx, noSpec(unknown), "warning"), false;
+    const targets = refs.length ? [...new Set(named as string[])] : verifyQueue(specsAbs(ctx), today(), settings.verifyCount);
     if (!targets.length) return notify(ctx, `The ${settings.verifyCount} oldest specs were already verified today: nothing to do.`), false;
     if (state.mode === "off" && otherWorkflowActive(ctx))
       return notify(ctx, "Plan mode (or another workflow) is active: exit it before verifying specs.", "warning"), false;
@@ -279,6 +305,7 @@ export default function specMode(pi: ExtensionAPI) {
   }
 
   function implement(ctx: ExtensionContext, arg: string) {
+    if (state.mode === "verify") return notify(ctx, "A spec verify run is in progress.", "warning");
     const plan = pi.getCommands().find((c) => c.source === "extension" && /^plan(:\d+)?$/.test(c.name));
     if (!plan) return notify(ctx, "Implementing a spec needs plan mode: pi install npm:@narumitw/pi-plan-mode", "warning");
     if (!arg.trim()) return notify(ctx, "Which spec? /spec implement <number or name>", "warning");
@@ -440,8 +467,9 @@ export default function specMode(pi: ExtensionAPI) {
 
   /** Subcommands the current state accepts, in menu order: the menu and the completion offer the same list. */
   function commands(): string[] {
-    if (state.mode === "off") return ["start", "list", "agree", "verify", "implement", "refuse", "restore", "obsolete", "purge", "template", "settings"];
-    if (state.mode === "spec") return [...(state.spec ? ["agree"] : []), "refuse", "list", "template", "exit", "settings"];
+    if (state.mode === "off") return ["start", "list", "agree", "verify", "verify_oldest", "implement", "refuse", "restore", "obsolete", "purge", "template", "settings"];
+    // Spec mode works on the spec being written: managing the other specs or the setup waits for /spec exit.
+    if (state.mode === "spec") return [...(state.spec ? ["agree", "verify", "refuse"] : []), "list", "exit"];
     return ["list", "exit", "settings"];
   }
 
@@ -459,38 +487,63 @@ export default function specMode(pi: ExtensionAPI) {
       // `/spec verify that login works offline` is a request: commands without an argument only match alone.
       // `/spec verify 0003` and `/spec agree 0003` name a spec, so they are the command; a number or spec file name
       // that matches nothing is too, so a typo gets "No spec" instead of starting spec mode.
-      const namesSpec = ["verify", "agree"].includes(sub) && rest !== "" && (/^\d{1,4}$|^\d{4}_spec_.+\.md$/i.test(rest) || !!resolveSpec(specsAbs(ctx), rest));
-      const isRequest = rest !== "" && !namesSpec && ["start", "list", "exit", "off", "agree", "verify", "purge", "template", "settings"].includes(sub);
+      // `/spec verify 3 5` names several.
+      const refs = sub === "verify" ? specRefs(specsAbs(ctx), rest) : undefined;
+      const namesSpec = !!refs || (sub === "agree" && specRefs(specsAbs(ctx), rest)?.length === 1);
+      const isRequest = rest !== "" && !namesSpec && ["start", "list", "exit", "off", "agree", "verify", "verify_oldest", "purge", "template", "settings"].includes(sub);
+
+      // In spec mode, refuse and verify only apply to the spec in progress; the management commands wait for /spec exit.
+      if (state.mode === "spec" && !isRequest) {
+        const current = state.spec && resolve(ctx.cwd, state.spec);
+        const words = rest === "" ? [] : sub === "verify" ? refs ?? [] : [rest];
+        const other = ["refuse", "verify"].includes(sub) && (!current || words.some((w) => resolveSpec(specsAbs(ctx), w) !== current));
+        if (other) return notify(ctx, `In spec mode only the spec in progress can be ${sub === "verify" ? "verified" : "refused"}: /spec exit first.`, "warning");
+        if (["verify_oldest", "implement", "restore", "obsolete", "purge", "template", "settings"].includes(sub))
+          return notify(ctx, `/spec ${sub} is not available in spec mode: /spec exit first.`, "warning");
+      }
+
+      // Without a spec in progress, agree and refuse need one picked, like implement and restore; a verify run refuses them all without a picker.
+      const asksSpec = (s: string) => state.mode !== "verify" && ["agree", "refuse", "verify", "implement", "restore", "obsolete"].includes(s) && !(["agree", "refuse", "verify"].includes(s) && state.spec);
+      /** Picks the spec from a list, then runs the same command as typing it with that spec. */
+      const pickThenRun = async (s: string): Promise<void> => {
+        const choices = specPicker(ctx, s);
+        if (!choices.length) return notify(ctx, PICKER_EMPTY[s] ?? "No spec to pick.", "warning");
+        if (s === "verify") {
+          // Ticked from the start: the specs a plain `/spec verify` would check, so Enter alone keeps that behaviour.
+          const queue = verifyQueue(specsAbs(ctx), today(), settings.verifyCount).map((p) => basename(p).slice(0, 4));
+          const picked = await pickMany(ctx, "verify: which specs? (Enter ticks, first line starts)", choices, queue);
+          if (!picked) return;
+          return picked.length ? run(`verify ${picked.join(" ")}`, ctx) : notify(ctx, "No spec selected: nothing verified.", "warning");
+        }
+        const which = await pickSpec(ctx, `${s}: which spec?`, choices.map((c) => c.label));
+        const arg = choices.find((c) => c.label === which)?.arg;
+        if (!arg) return;
+        if (s === "obsolete") {
+          // A replacement is any live spec but this one; none is a valid answer.
+          const none = "none (no replacement)";
+          const others = specChoices(specsAbs(ctx)).filter((c) => (c.folder === "" || c.folder === "Implemented") && c.arg !== arg);
+          const by = await pickSpec(ctx, `obsolete ${arg}: replaced by which spec?`, [none, ...others.map((c) => c.label)]);
+          if (by === undefined) return;
+          return run(`obsolete ${arg} ${others.find((c) => c.label === by)?.arg ?? ""}`.trim(), ctx);
+        }
+        return run(`${s} ${arg}`, ctx);
+      };
+      // `/spec implement` alone offers the same list as the menu; without a UI the command still asks for the spec.
+      if (rest === "" && ctx.hasUI && asksSpec(sub)) return pickThenRun(sub);
 
       switch (isRequest ? undefined : sub) {
         case "": {
           if (!ctx.hasUI) return notify(ctx, `Usage: ${USAGE}`);
-          // Without a spec in progress, agree and refuse need one picked, like implement and restore.
           const entries = commands().map((sub) => {
-            const current = (sub === "agree" || sub === "refuse") && !!state.spec;
+            const current = ["agree", "refuse", "verify"].includes(sub) && !!state.spec;
             const detail = current ? "the spec in progress" : MENU_DETAIL[sub];
-            return { sub, label: detail ? `${sub} (${detail})` : sub, asksSpec: ["agree", "refuse", "implement", "restore", "obsolete"].includes(sub) && !current };
+            return { sub, label: detail ? `${sub} (${detail})` : sub, asksSpec: asksSpec(sub) };
           });
           const pick = await ctx.ui.select("Spec mode", entries.map((e) => e.label));
           const entry = entries.find((e) => e.label === pick);
           // The menu runs the same command as typing it.
           if (!entry) return;
-          const menuSub = entry.sub;
-          if (!entry.asksSpec) return run(menuSub, ctx);
-          const choices = specPicker(ctx, menuSub);
-          if (!choices.length) return notify(ctx, PICKER_EMPTY[menuSub] ?? "No spec to pick.", "warning");
-          const which = await pickSpec(ctx, `${menuSub}: which spec?`, choices.map((c) => c.label));
-          const arg = choices.find((c) => c.label === which)?.arg;
-          if (!arg) return;
-          if (menuSub === "obsolete") {
-            // A replacement is any live spec but this one; none is a valid answer.
-            const none = "none (no replacement)";
-            const others = specChoices(specsAbs(ctx)).filter((c) => (c.folder === "" || c.folder === "Implemented") && c.arg !== arg);
-            const by = await pickSpec(ctx, `obsolete ${arg}: replaced by which spec?`, [none, ...others.map((c) => c.label)]);
-            if (by === undefined) return;
-            return run(`obsolete ${arg} ${others.find((c) => c.label === by)?.arg ?? ""}`.trim(), ctx);
-          }
-          return run(`${menuSub} ${arg}`, ctx);
+          return entry.asksSpec ? pickThenRun(entry.sub) : run(entry.sub, ctx);
         }
         case "start": {
           if (!idle) return busy();
@@ -504,7 +557,13 @@ export default function specMode(pi: ExtensionAPI) {
           return idle ? agree(ctx, rest) : busy();
         case "verify":
           if (!idle) return busy();
-          if (startVerify(ctx, rest)) pi.sendUserMessage("Verify the specs.");
+          // In spec mode the guard above left only the spec in progress.
+          if (startVerify(ctx, state.mode === "spec" && state.spec ? [basename(state.spec)] : refs ?? [])) pi.sendUserMessage(verifyRequest(state.targets ?? []));
+          return;
+        case "verify_oldest":
+          // The pre-picker `/spec verify`: the verifyCount specs verified longest ago, no list.
+          if (!idle) return busy();
+          if (startVerify(ctx)) pi.sendUserMessage(verifyRequest(state.targets ?? []));
           return;
         case "implement":
           return implement(ctx, rest);
@@ -542,7 +601,7 @@ export default function specMode(pi: ExtensionAPI) {
       return;
     }
     if (state.mode === "verify") {
-      sections[SECTION] = verifyContract(settings.specsDir, today(), state.targets ?? []);
+      sections[SECTION] = verifyContract(settings.specsDir, today(), state.targets ?? [], settings.yolo);
       return;
     }
     if (sweep(ctx)) return; // the sweep refused the spec being written: no spec contract this turn
@@ -558,11 +617,30 @@ export default function specMode(pi: ExtensionAPI) {
       template: template(ctx),
       specs,
       current: state.spec,
+      yolo: settings.yolo,
     });
   });
 
   pi.on("tool_call", async (event, ctx) => {
     if (state.mode === "off" || READ_TOOLS.has(event.toolName)) return;
+    if (settings.yolo) {
+      // yolo skips the checks, but a spec-file write still records its before-content for the verify restore rules.
+      if (event.toolName === "write" || event.toolName === "edit") {
+        const p = String(event.input.path ?? "");
+        // pi strips a leading `@` mention marker from a tool path before writing: judge the path it will actually write.
+        // Best effort: only `@` is stripped; a `~/` or `file://` path (which pi also rewrites) or a symlink to the template slips past the guard. Best effort, as the README says of yolo; upgrade to pi's own path resolver if one gets exported.
+        const norm = p.startsWith("@") ? p.slice(1) : p;
+        const abs = resolve(ctx.cwd, norm);
+        // The template guard survives yolo: everything else may be written, the yardstick of /spec agree may not.
+        const blocked = templateGuard(ctx, abs);
+        if (blocked) return blocked;
+        if (isInside(settings.specsDir, ctx.cwd, norm) && SPEC_FILE.test(basename(abs))) {
+          event.input.path = abs;
+          beforeEdit.set(event.toolCallId, existsSync(abs) ? readFileSync(abs, "utf8") : "");
+        }
+      }
+      return;
+    }
     if (event.toolName === "bash") {
       const cmd = String(event.input.command ?? "");
       if (isReadOnlyCommand(cmd)) return;
@@ -586,10 +664,8 @@ export default function specMode(pi: ExtensionAPI) {
       // Only the part under the specs folder is checked: the project's own path may contain a `-folder`.
       if (relative(specsAbs(ctx), abs).split(/[\\/]/).some((s) => s.startsWith("-")))
         return { block: true, reason: `Spec mode: file and folder names cannot start with "-".` };
-      // /spec agree checks a spec against the template: the agent must not be able to weaken it. Lower-cased: macOS and Windows ignore case.
-      // The one exception is the run `/spec template` starts, which exists to rewrite it.
-      if (abs.toLowerCase() === localTemplate(ctx).toLowerCase() && !templateRun)
-        return { block: true, reason: `Spec mode: ${rel(ctx, abs)} is the user's template and cannot be changed in spec mode. Run /spec template to have it adapted, or edit it yourself.` };
+      const blocked = templateGuard(ctx, abs);
+      if (blocked) return blocked;
       // pi rewrites `@x`, `~/x`, `file://…` and (on Windows) `/c/x` before writing: give it the absolute path that was just checked.
       event.input.path = abs;
       beforeEdit.set(event.toolCallId, existsSync(abs) ? readFileSync(abs, "utf8") : "");

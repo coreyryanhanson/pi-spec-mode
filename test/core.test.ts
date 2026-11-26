@@ -5,7 +5,7 @@ import { basename, join } from "node:path";
 import { test } from "node:test";
 import {
   emptySections, getField, isInside, isReadOnlyCommand, leftovers, missingSections, nextSpecNumber, obsoleteSpec, obsoleteSpecs, pickerMove,
-  purgeSpecs, refuseSpec, resolveSpec, restoreSpec, setField, settingError, specChoices, specSummary, specTable, sweepArchived, verifyQueue, withSetting,
+  purgeSpecs, refuseSpec, resolveSpec, restoreSpec, setField, settingError, specChoices, specRefs, specSummary, specTable, sweepArchived, verifyQueue, withSetting,
 } from "../src/core.ts";
 
 const template = readFileSync(new URL("../templates/spec_template.md", import.meta.url), "utf8");
@@ -215,6 +215,9 @@ test("settingError accepts valid values and names the rule a bad one breaks", ()
   assert.match(settingError("verifyCount", Number("two"), cwd)!, /positive integer/);
   assert.match(settingError("renameSession", "yes", cwd)!, /true or false/);
   assert.match(settingError("renamePlanSession", 1, cwd)!, /renamePlanSession must be true or false/);
+  assert.equal(settingError("yolo", true, cwd), undefined);
+  assert.equal(settingError("yolo", false, cwd), undefined);
+  assert.match(settingError("yolo", "yes", cwd)!, /yolo must be true or false/);
   assert.match(settingError("other", 1, cwd)!, /unknown setting/);
 });
 
@@ -231,4 +234,12 @@ test("pickerMove: up on the first spec wraps to the last, down on the last wraps
   assert.equal(pickerMove(1, 4, "down"), 2);
   assert.equal(pickerMove(3, 4, "down"), 0);
   assert.equal(pickerMove(0, 1, "up"), 0);
+});
+
+test("specRefs: every word must name a spec, or it is a request", () => {
+  const dir = mkdtempSync(join(tmpdir(), "refs-"));
+  writeFileSync(join(dir, "0001_spec_login.md"), "");
+  assert.deepEqual(specRefs(dir, "1 0002 0001_spec_login.md login"), ["1", "0002", "0001_spec_login.md", "login"]);
+  assert.equal(specRefs(dir, "that login works offline"), undefined);
+  assert.equal(specRefs(dir, "  "), undefined);
 });

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { test } from "node:test";
 import specMode from "../src/index.ts";
+import { today } from "../src/core.ts";
 
 type Handler = (event: any, ctx: any) => any;
 
@@ -142,6 +143,125 @@ test("tool policy: spec folder writable, everything else refused", async () => {
   assert.match(h.sent.custom.at(-1).content, /CONTRACT v1: NORMAL/);
 });
 
+test("yolo: the calls spec mode would block pass through", async () => {
+  const h = harness();
+  h.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "yolo": true }');
+  await h.fire("session_start");
+  await h.commands.spec.handler("start", h.ctx);
+  assert.match(h.notes[0], /yolo/); // the banner no longer promises a limited write scope
+  const call = (toolName: string, input: any) => h.fire("tool_call", { toolName, toolCallId: "t", input });
+  // The bash allowlist is off: writes through the shell run.
+  assert.equal(await call("bash", { command: "echo x > specs/a.md" }), undefined);
+  // Writes outside the specs folder, non-Markdown files and dash names are all allowed.
+  assert.equal(await call("write", { path: "src/x.ts", content: "" }), undefined);
+  assert.equal(await call("write", { path: "specs/notes.txt", content: "" }), undefined);
+  assert.equal(await call("write", { path: "specs/-o.md", content: "" }), undefined);
+  // The template stays protected under yolo: /spec agree measures every spec against it.
+  assert.equal((await call("write", { path: "specs/spec_template.md", content: "" }))?.block, true);
+  // The template stays protected under yolo, and 1.1.0 refuses /spec template in spec mode: no run allows a rewrite.
+  await h.commands.spec.handler("template", h.ctx);
+  assert.match(h.notes.at(-1)!, /not available in spec mode/);
+  assert.equal((await call("write", { path: "specs/spec_template.md", content: "x" }))?.block, true);
+  // A symlink under specs/ no longer stops a write.
+  mkdirSync(join(h.cwd, "specs"), { recursive: true });
+  mkdirSync(join(h.cwd, "src"));
+  symlinkSync("../src", join(h.cwd, "specs/notes"));
+  assert.equal(await call("write", { path: "specs/notes/a.md", content: "" }), undefined);
+  // The catch-all is off: any other tool runs.
+  assert.equal(await call("some_mcp_tool", {}), undefined);
+});
+
+test("without yolo the same calls stay blocked", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  await h.commands.spec.handler("start", h.ctx);
+  assert.doesNotMatch(h.notes[0], /yolo/);
+  const call = (toolName: string, input: any) => h.fire("tool_call", { toolName, toolCallId: "t", input });
+  assert.equal((await call("bash", { command: "echo x > specs/a.md" }))?.block, true);
+  assert.equal((await call("write", { path: "src/x.ts", content: "" }))?.block, true);
+  assert.equal((await call("some_mcp_tool", {}))?.block, true);
+});
+
+test("yolo keeps the verify restore rules for spec-file writes", async () => {
+  const h = harness();
+  h.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "yolo": true }');
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  const a = join(h.cwd, "specs/0001_spec_a.md");
+  writeFileSync(a, AGREED);
+  await h.commands.spec.handler("verify 1", h.ctx); // 1.1.0: a bare verify opens the picker; naming the spec starts the run directly
+  // An ungated edit that sets an Agreed spec to Draft: the before-content was still recorded, so spec mode puts it back.
+  const ev = { toolName: "edit", toolCallId: "e1", input: { path: "specs/0001_spec_a.md" }, isError: false };
+  await h.fire("tool_call", ev);
+  writeFileSync(a, `${FILLED}\nA rule nobody agreed.\n`);
+  await h.fire("tool_result", ev);
+  const md = readFileSync(a, "utf8");
+  assert.match(md, /\| Status \| Draft \|/);
+  assert.match(md, /\| Version \| 2 \|/); // only possible when the edit saw the Agreed before-content
+  assert.match(h.notes.at(-1)!, /changed: back to Draft/);
+});
+
+test("yolo resolves an @ mention path before checking: the template stays guarded and spec writes keep the restore rules", async () => {
+  const h = harness();
+  h.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "yolo": true }');
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  // pi strips the `@` before writing, so the guard must judge the path it will actually write.
+  await h.commands.spec.handler("start", h.ctx);
+  const call = (input: any) => h.fire("tool_call", { toolName: "write", toolCallId: "t", input });
+  assert.equal((await call({ path: "@specs/spec_template.md", content: "" }))?.block, true);
+  // An edit through an `@` path still gets its before-content recorded: the restore rules see it.
+  await h.commands.spec.handler("exit", h.ctx);
+  const a = join(h.cwd, "specs/0001_spec_a.md");
+  writeFileSync(a, AGREED);
+  await h.commands.spec.handler("verify 1", h.ctx); // 1.1.0: a bare verify opens the picker; naming the spec starts the run directly
+  const ev = { toolName: "edit", toolCallId: "e1", input: { path: "@specs/0001_spec_a.md" }, isError: false };
+  await h.fire("tool_call", ev);
+  writeFileSync(a, `${FILLED}\nA rule nobody agreed.\n`);
+  await h.fire("tool_result", ev);
+  assert.match(readFileSync(a, "utf8"), /\| Version \| 2 \|/); // only possible when the edit saw the Agreed before-content
+});
+
+test("the prompt contract matches the yolo setting", async () => {
+  // Default: the contract still claims the restrictions are enforced.
+  const off = harness();
+  await off.fire("session_start");
+  mkdirSync(join(off.cwd, "specs"));
+  writeFileSync(join(off.cwd, "specs/0001_spec_a.md"), FILLED);
+  await off.commands.spec.handler("start", off.ctx);
+  assert.match(await off.prompt(), /Restrictions \(enforced, calls outside them are refused\)/);
+  await off.commands.spec.handler("exit", off.ctx);
+  await off.commands.spec.handler("verify 1", off.ctx); // 1.1.0: a bare verify opens the picker; naming the spec starts the run directly
+  assert.match(await off.prompt(), /Restrictions \(enforced\): read anything/);
+
+  // With yolo the contract must not claim enforcement the gate no longer applies.
+  const on = harness();
+  on.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(on.cwd, ".pi"));
+  writeFileSync(join(on.cwd, ".pi/pi-spec-mode.json"), '{ "yolo": true }');
+  await on.fire("session_start");
+  mkdirSync(join(on.cwd, "specs"));
+  writeFileSync(join(on.cwd, "specs/0001_spec_a.md"), FILLED);
+  await on.commands.spec.handler("start", on.ctx);
+  const yoloContract = await on.prompt();
+  assert.doesNotMatch(yoloContract, /enforced/);
+  assert.match(yoloContract, /yolo setting is on/);
+  assert.match(yoloContract, /no code, tests or implementation plans/); // the mode's job, not a tool restriction
+  await on.commands.spec.handler("exit", on.ctx);
+  await on.commands.spec.handler("verify 1", on.ctx); // 1.1.0: a bare verify opens the picker; naming the spec starts the run directly
+  const yoloVerify = await on.prompt();
+  assert.doesNotMatch(yoloVerify, /enforced/);
+  assert.match(yoloVerify, /yolo setting is on/);
+  // The status rules survive yolo: the contract still says spec mode puts an edited Agreed spec back to Draft.
+  assert.match(yoloVerify, /back to Draft/);
+});
+
 test("a spec that is a symbolic link is not listed, and session start does not write through it", async () => {
   const h = harness();
   mkdirSync(join(h.cwd, "specs"));
@@ -241,13 +361,16 @@ test("plan mode active blocks spec mode; spec mode answers plan mode's mutex", a
 });
 
 test("verify run: picks the two oldest, uses its contract, returns to previous mode", async () => {
-  const h = harness();
+  const h = harness({ picks: ["▶ verify 2 selected"] });
   await h.fire("session_start");
   mkdirSync(join(h.cwd, "specs/Implemented"), { recursive: true });
   for (const [f, d] of [["0001_spec_a.md", "2026-05-01"], ["0002_spec_b.md", ""], ["Implemented/0003_spec_c.md", "2026-01-01"]])
     writeFileSync(join(h.cwd, "specs", f), `| Status | Agreed |\n| Last verified | ${d} |\n`);
   await h.commands.spec.handler("verify", h.ctx);
-  assert.deepEqual(h.sent.user, ["Verify the specs."]);
+  // The picker ticks the two oldest from the start: Enter alone keeps the old /spec verify.
+  assert.deepEqual(h.offered[0], ["▶ verify 2 selected", "[ ] 0001 · Agreed · a", "[x] 0002 · Agreed · b", "[x] 0003 · Agreed · c"]);
+  assert.equal(h.sent.user.length, 1);
+  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/Implemented\/0003_spec_c\.md`, and no other spec\./);
   assert.equal(h.status(), "✎ spec-mode verify");
   const c = await h.prompt();
   assert.match(c, /VERIFY/);
@@ -263,7 +386,11 @@ test("/spec verify <spec> checks only that spec, even if verified today", async 
   for (const [f, d] of [["0001_spec_a.md", ""], ["Implemented/0002_spec_b.md", "2026-11-16"]])
     writeFileSync(join(h.cwd, "specs", f), `| Status | Agreed |\n| Last verified | ${d} |\n`);
   await h.commands.spec.handler("verify 2", h.ctx);
-  assert.deepEqual(h.sent.user, ["Verify the specs."]);
+  assert.equal(h.sent.user.length, 1);
+  // The request itself names the spec and the contract: a generic "Verify the specs." after a NORMAL contract read as "verify everything, normal mode".
+  assert.match(h.sent.user[0], /^Verify `specs\/Implemented\/0002_spec_b\.md`, and no other spec\./);
+  assert.match(h.sent.user[0], /VERIFY contract[\s\S]*replaces any earlier NORMAL/);
+  assert.doesNotMatch(h.sent.user[0], /0001/);
   assert.match(await h.prompt(), /in this order: `specs\/Implemented\/0002_spec_b\.md`\./);
   await h.fire("agent_settled", { aborted: false });
   // Not a spec name: still a request.
@@ -412,7 +539,7 @@ test("/spec agree <spec> on another spec keeps the one in progress in spec mode"
   assert.deepEqual(h.sent.custom, []); // spec mode never stopped: no NORMAL contract
 });
 
-test("refusing the spec in progress leaves spec mode, refusing another one keeps it", async () => {
+test("in spec mode only the spec in progress can be refused", async () => {
   const h = harness();
   await h.fire("session_start");
   await h.commands.spec.handler("start", h.ctx);
@@ -421,7 +548,8 @@ test("refusing the spec in progress leaves spec mode, refusing another one keeps
   writeFileSync(join(h.cwd, "specs/0002_spec_b.md"), FILLED);
   await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0002_spec_b.md" }, isError: false });
   await h.commands.spec.handler("refuse 1", h.ctx);
-  assert.ok(existsSync(join(h.cwd, "specs/Refused/0001_spec_a.md")));
+  assert.ok(existsSync(join(h.cwd, "specs/0001_spec_a.md")));
+  assert.match(h.notes.at(-1)!, /only the spec in progress can be refused/);
   assert.equal(h.status(), "✎ spec-mode 0002 · Draft");
   await h.commands.spec.handler("refuse", h.ctx);
   assert.ok(existsSync(join(h.cwd, "specs/Refused/0002_spec_b.md")));
@@ -589,17 +717,15 @@ test("/spec template copies the generic template when the adaptation is declined
   assert.match(h.notes.at(-1)!, /by hand/);
 });
 
-test("the agent may rewrite the template during the /spec template run only", async () => {
+test("spec mode never lets the agent rewrite the template, /spec template runs outside it", async () => {
   const h = harness();
   await h.fire("session_start");
   await h.commands.spec.handler("start", h.ctx);
   const call = (id: string) => h.fire("tool_call", { toolName: "write", toolCallId: id, input: { path: "specs/spec_template.md", content: "x" } });
   assert.equal((await call("t0"))?.block, true);
   await h.commands.spec.handler("template", h.ctx);
-  assert.equal(await call("t1"), undefined);
-  await h.fire("agent_settled");
-  assert.match(h.notes.at(-1)!, /Reread specs\/spec_template\.md/);
-  assert.equal((await call("t2"))?.block, true);
+  assert.match(h.notes.at(-1)!, /not available in spec mode/);
+  assert.equal((await call("t1"))?.block, true);
 });
 
 test("/spec template refuses while the agent runs, and copies without asking without UI", async () => {
@@ -624,15 +750,40 @@ test("commands refuse what the current state does not allow", async () => {
   await h.fire("session_start");
   await h.commands.spec.handler("exit", h.ctx);
   assert.match(h.notes.at(-1)!, /not on/);
-  await h.commands.spec.handler("agree", h.ctx);
-  assert.match(h.notes.at(-1)!, /not on/);
-  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["start", "list", "agree", "verify", "implement", "refuse", "restore", "obsolete", "purge", "template", "settings"]);
+  await h.commands.spec.handler("agree", h.ctx); // no spec named, none in progress: the picker has nothing to offer
+  assert.match(h.notes.at(-1)!, /No Draft spec to agree/);
+  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["start", "list", "agree", "verify", "verify_oldest", "implement", "refuse", "restore", "obsolete", "purge", "template", "settings"]);
   await h.commands.spec.handler("start", h.ctx);
   await h.commands.spec.handler("start", h.ctx);
   assert.match(h.notes.at(-1)!, /already on/);
   await h.commands.spec.handler("agree", h.ctx);
-  assert.match(h.notes.at(-1)!, /No spec written yet/);
-  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["refuse", "list", "template", "exit", "settings"]);
+  assert.match(h.notes.at(-1)!, /No Draft spec to agree/);
+  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["list", "exit"]);
+});
+
+test("spec mode refuses the commands that manage other specs or the setup", async () => {
+  const h = harness({ plan: true, picks: [] });
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs/Refused"), { recursive: true });
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), "| Status | Agreed |\n");
+  writeFileSync(join(h.cwd, "specs/Refused/0002_spec_b.md"), "| Status | Refused |\n");
+  await h.commands.spec.handler("start", h.ctx);
+  for (const cmd of ["verify_oldest", "implement 1", "implement", "restore 2", "obsolete 1", "purge", "template", "settings"]) {
+    await h.commands.spec.handler(cmd, h.ctx);
+    assert.match(h.notes.at(-1)!, /not available in spec mode: \/spec exit first/, cmd);
+  }
+  await h.commands.spec.handler("refuse", h.ctx); // nothing written yet: no spec in progress to refuse
+  assert.match(h.notes.at(-1)!, /only the spec in progress/);
+  assert.equal(h.offered.length, 0); // no picker opened
+  assert.deepEqual(h.sent.user, []);
+  assert.ok(existsSync(join(h.cwd, "specs/Refused/0002_spec_b.md")));
+  assert.ok(!existsSync(join(h.cwd, "specs/spec_template.md")));
+  assert.equal(h.status(), "✎ spec-mode");
+  writeFileSync(join(h.cwd, "specs/0003_spec_c.md"), FILLED);
+  await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0003_spec_c.md" }, isError: false });
+  assert.deepEqual(h.commands.spec.getArgumentCompletions("").map((i: any) => i.value), ["agree", "verify", "refuse", "list", "exit"]);
+  await h.commands.spec.handler("refuse 3", h.ctx); // naming the spec in progress is fine
+  assert.ok(existsSync(join(h.cwd, "specs/Refused/0003_spec_c.md")));
 });
 
 test("/spec menu shows the same words as the completion, in every state", async () => {
@@ -704,6 +855,90 @@ test("/spec menu picks a spec from a list instead of typing a number", async () 
   assert.match(empty.notes.at(-1)!, /No Agreed spec to implement/);
   assert.equal(empty.offered.length, 1); // the menu only
   assert.deepEqual(empty.sent.user, []);
+});
+
+test("during a verify run, /spec <command> without a spec refuses without opening the picker", async () => {
+  const h = harness({ plan: true });
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs/Implemented"), { recursive: true });
+  mkdirSync(join(h.cwd, "specs/Refused"), { recursive: true });
+  writeFileSync(join(h.cwd, "specs/0001_spec_login.md"), "| Status | Agreed |\n");
+  writeFileSync(join(h.cwd, "specs/Implemented/0003_spec_done.md"), "| Status | Implemented |\n");
+  writeFileSync(join(h.cwd, "specs/Refused/0004_spec_old.md"), "| Status | Refused |\n");
+  await h.commands.spec.handler("verify 0001", h.ctx);
+  assert.equal(h.status(), "✎ spec-mode verify");
+  for (const sub of ["refuse", "implement", "restore", "obsolete"]) {
+    await h.commands.spec.handler(sub, h.ctx);
+    assert.deepEqual(h.offered, [], sub);
+    assert.match(h.notes.at(-1)!, /verify run is in progress/, sub);
+  }
+});
+test("/spec <command> without a spec opens the same picker as the menu", async () => {
+  const setup = async (opts: { plan?: boolean; picks?: string[] }) => {
+    const h = harness(opts);
+    await h.fire("session_start");
+    mkdirSync(join(h.cwd, "specs/Implemented"), { recursive: true });
+    mkdirSync(join(h.cwd, "specs/Refused"), { recursive: true });
+    writeFileSync(join(h.cwd, "specs/0001_spec_login.md"), "| Status | Agreed |\n");
+    writeFileSync(join(h.cwd, "specs/0002_spec_draft.md"), FILLED);
+    writeFileSync(join(h.cwd, "specs/Implemented/0003_spec_done.md"), "| Status | Implemented |\n");
+    writeFileSync(join(h.cwd, "specs/Refused/0004_spec_old.md"), "| Status | Refused |\n");
+    return h;
+  };
+
+  const impl = await setup({ plan: true, picks: ["0001 · Agreed · login"] });
+  await impl.commands.spec.handler("implement", impl.ctx);
+  assert.deepEqual(impl.offered[0], ["0001 · Agreed · login"]);
+  assert.match(impl.sent.user[0], /^\/plan Implement the agreed spec `specs\/0001_spec_login\.md`/);
+
+  const agree = await setup({ picks: ["0002 · Draft · draft"] });
+  await agree.commands.spec.handler("agree", agree.ctx);
+  assert.deepEqual(agree.offered[0], ["0002 · Draft · draft"]);
+  assert.match(readFileSync(join(agree.cwd, "specs/0002_spec_draft.md"), "utf8"), /\| Status \| Agreed \|/);
+
+  const refuse = await setup({ picks: ["0002 · Draft · draft"] });
+  await refuse.commands.spec.handler("refuse", refuse.ctx);
+  assert.ok(existsSync(join(refuse.cwd, "specs/Refused/0002_spec_draft.md")));
+
+  const restore = await setup({ picks: ["0004 · Refused · old"] });
+  await restore.commands.spec.handler("restore", restore.ctx);
+  assert.deepEqual(restore.offered[0], ["0004 · Refused · old"]);
+  assert.ok(existsSync(join(restore.cwd, "specs/0004_spec_old.md")));
+
+  // Obsolete asks the spec, then its replacement, like the menu.
+  const obs = await setup({ picks: ["0003 · Implemented · done", "none (no replacement)"] });
+  await obs.commands.spec.handler("obsolete", obs.ctx);
+  assert.deepEqual(obs.offered[0], ["0003 · Implemented · done"]);
+  assert.equal(obs.offered.length, 2);
+  assert.ok(existsSync(join(obs.cwd, "specs/Obsolete/0003_spec_done.md")));
+
+  // Nothing eligible: the same message as the menu, no picker.
+  const empty = harness({ plan: true });
+  await empty.fire("session_start");
+  await empty.commands.spec.handler("implement", empty.ctx);
+  assert.match(empty.notes.at(-1)!, /No Agreed spec to implement/);
+  assert.equal(empty.offered.length, 0);
+
+  // Typing the spec still runs it directly, no picker.
+  const typed = await setup({ plan: true });
+  await typed.commands.spec.handler("implement 0001", typed.ctx);
+  assert.equal(typed.offered.length, 0);
+  assert.match(typed.sent.user[0], /^\/plan Implement the agreed spec/);
+
+  // Without a UI there is no list to show: the command still asks for the spec.
+  const headless = await setup({ plan: true });
+  headless.ctx.hasUI = false;
+  const errs: string[] = [];
+  const orig = console.error;
+  console.error = (...a: unknown[]) => errs.push(a.join(" "));
+  try {
+    await headless.commands.spec.handler("implement", headless.ctx);
+    await headless.commands.spec.handler("agree", headless.ctx);
+  } finally {
+    console.error = orig;
+  }
+  assert.match(errs[0], /Which spec\? \/spec implement/);
+  assert.match(errs[1], /Spec mode is not on/);
 });
 
 test("/spec settings says which files exist and reloads a project file created later", async () => {
@@ -832,6 +1067,32 @@ test("the session is not renamed by default, and a non-boolean renameSession fal
   }
 });
 
+test("a non-boolean yolo falls back to false and the tool gate stays on", async () => {
+  const h = harness();
+  h.ctx.isProjectTrusted = () => true;
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "yolo": "yes" }');
+  await h.fire("session_start");
+  assert.match(h.notes.at(-1)!, /yolo must be true or false/);
+  await h.commands.spec.handler("start", h.ctx);
+  assert.doesNotMatch(h.notes[1], /yolo/); // the banner still promises a limited write scope
+  const call = (toolName: string, input: any) => h.fire("tool_call", { toolName, toolCallId: "t", input });
+  assert.equal((await call("write", { path: "src/x.ts", content: "" }))?.block, true);
+  assert.equal((await call("bash", { command: "echo x > specs/a.md" }))?.block, true);
+});
+
+test("an untrusted project's yolo setting is ignored and the tool gate stays on", async () => {
+  const h = harness();
+  mkdirSync(join(h.cwd, ".pi"));
+  writeFileSync(join(h.cwd, ".pi/pi-spec-mode.json"), '{ "yolo": true }');
+  await h.fire("session_start");
+  await h.commands.spec.handler("start", h.ctx);
+  assert.doesNotMatch(h.notes[0], /yolo/); // the project file is only read in a trusted project
+  const call = (toolName: string, input: any) => h.fire("tool_call", { toolName, toolCallId: "t", input });
+  assert.equal((await call("write", { path: "src/x.ts", content: "" }))?.block, true);
+  assert.equal((await call("bash", { command: "echo x > specs/a.md" }))?.block, true);
+});
+
 test("agent setting an Agreed spec to Refused moves it instead of resetting it to Draft", async () => {
   const h = harness();
   await h.fire("session_start");
@@ -908,7 +1169,7 @@ test("only an Agreed spec found built by verify becomes Implemented: an agent wr
 });
 
 test("verify run: stamping an Agreed spec keeps it Agreed, changing it or self-agreeing does not", async () => {
-  const h = harness();
+  const h = harness({ picks: ["▶ verify 2 selected"] });
   await h.fire("session_start");
   mkdirSync(join(h.cwd, "specs"));
   const AGREED = FILLED.replace("| Status | Draft |", "| Status | Agreed |");
@@ -945,7 +1206,7 @@ test("verify run: stamping an Agreed spec keeps it Agreed, changing it or self-a
 });
 
 test("verify run: an Agreed spec the agent sets to Draft itself is handled like any changed Agreed spec", async () => {
-  const h = harness({ picks: ["Keep Draft"] });
+  const h = harness({ picks: ["▶ verify 2 selected", "Keep Draft"] });
   await h.fire("session_start");
   mkdirSync(join(h.cwd, "specs"));
   const a = join(h.cwd, "specs/0001_spec_a.md");
@@ -1069,10 +1330,115 @@ test("spec, verify and implement prompts forbid reading obsolete specs", async (
   await h.commands.spec.handler("start", h.ctx);
   assert.match(await h.prompt(), /Never read, cite or extend specs in `specs\/Obsolete\/`/);
   await h.commands.spec.handler("exit", h.ctx);
-  await h.commands.spec.handler("verify", h.ctx);
+  await h.commands.spec.handler("verify 1 2", h.ctx);
   const verify = await h.prompt();
   assert.match(verify, /Never read, cite or extend specs in `specs\/Obsolete\/`/);
   assert.match(verify, /Never set Status to Refused or Obsolete/);
   const { implementRequest } = await import("../src/prompts.ts");
   assert.match(implementRequest("specs/0001_spec_a.md", "specs"), /Never read, cite or extend specs in `specs\/Obsolete\/`/);
+});
+
+test("/spec verify names several specs, and refuses the run when one does not exist", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs/Implemented"), { recursive: true });
+  for (const f of ["0001_spec_a.md", "0002_spec_b.md", "Implemented/0003_spec_c.md"])
+    writeFileSync(join(h.cwd, "specs", f), `| Status | Agreed |\n| Last verified | ${today()} |\n`);
+  await h.commands.spec.handler("verify 3 99", h.ctx);
+  assert.match(h.notes.at(-1)!, /No spec "99"/);
+  assert.deepEqual(h.sent.user, []);
+  assert.equal(h.status(), undefined);
+  await h.commands.spec.handler("verify 3 0001_spec_a.md 3", h.ctx); // verified today, named: checked anyway, once each, in the typed order
+  assert.equal(h.offered.length, 0);
+  assert.match(h.sent.user[0], /^Verify `specs\/Implemented\/0003_spec_c\.md`, `specs\/0001_spec_a\.md`/);
+  assert.match(await h.prompt(), /in this order: `specs\/Implemented\/0003_spec_c\.md`, `specs\/0001_spec_a\.md`\./);
+});
+
+test("/spec verify picker: Enter ticks or unticks a spec, the first line starts, Esc or nothing ticked verifies nothing", async () => {
+  const setup = async (picks: string[]) => {
+    const h = harness({ picks });
+    await h.fire("session_start");
+    mkdirSync(join(h.cwd, "specs/Refused"), { recursive: true });
+    writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), "| Status | Agreed |\n| Last verified | 2026-01-01 |\n");
+    writeFileSync(join(h.cwd, "specs/0002_spec_b.md"), "| Status | Draft |\n");
+    writeFileSync(join(h.cwd, "specs/0003_spec_c.md"), `| Status | Agreed |\n| Last verified | ${today()} |\n`);
+    writeFileSync(join(h.cwd, "specs/Refused/0004_spec_d.md"), "| Status | Refused |\n");
+    return h;
+  };
+  // The menu entry opens the same picker; refused specs are not offered.
+  const h = await setup(["verify (check specs against the code or each other)", "[x] 0001 · Agreed · a", "[ ] 0003 · Agreed · c", "▶ verify 2 selected"]);
+  await h.commands.spec.handler("", h.ctx);
+  assert.deepEqual(h.offered[1], ["▶ verify 2 selected", "[x] 0001 · Agreed · a", "[x] 0002 · Draft · b", "[ ] 0003 · Agreed · c"]);
+  assert.deepEqual(h.offered[2], ["▶ verify 1 selected", "[ ] 0001 · Agreed · a", "[x] 0002 · Draft · b", "[ ] 0003 · Agreed · c"]);
+  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/0003_spec_c\.md`/);
+
+  // During a run, no picker: the command says a run is in progress.
+  assert.equal(h.status(), "✎ spec-mode verify");
+  await h.commands.spec.handler("verify", h.ctx);
+  assert.equal(h.offered.length, 4); // the menu and three pickers, none more
+  assert.match(h.notes.at(-1)!, /already in progress/);
+
+  const esc = await setup([]);
+  await esc.commands.spec.handler("verify", esc.ctx);
+  assert.equal(esc.offered.length, 1);
+  assert.deepEqual(esc.sent.user, []);
+  assert.equal(esc.status(), undefined);
+
+  const none = await setup(["[x] 0001 · Agreed · a", "[x] 0002 · Draft · b", "▶ verify 0 selected"]);
+  await none.commands.spec.handler("verify", none.ctx);
+  assert.match(none.notes.at(-1)!, /No spec selected/);
+  assert.deepEqual(none.sent.user, []);
+
+  // Without a UI there is no picker: the oldest specs, never verified first, as before.
+  const headless = await setup([]);
+  headless.ctx.hasUI = false;
+  await headless.commands.spec.handler("verify", headless.ctx);
+  assert.match(headless.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/0001_spec_a\.md`/);
+});
+
+test("in spec mode /spec verify checks the spec in progress only, then returns to spec mode", async () => {
+  const h = harness({ picks: ["verify (the spec in progress)"] });
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), FILLED);
+  await h.commands.spec.handler("start", h.ctx);
+  await h.commands.spec.handler("verify", h.ctx); // nothing written yet
+  assert.match(h.notes.at(-1)!, /only the spec in progress can be verified/);
+  writeFileSync(join(h.cwd, "specs/0002_spec_b.md"), FILLED);
+  await h.fire("tool_result", { toolName: "write", toolCallId: "w", input: { path: "specs/0002_spec_b.md" }, isError: false });
+  await h.commands.spec.handler("verify 1", h.ctx);
+  assert.match(h.notes.at(-1)!, /only the spec in progress can be verified/);
+  assert.deepEqual(h.sent.user, []);
+  await h.commands.spec.handler("", h.ctx); // the menu entry, no picker
+  assert.equal(h.offered.length, 1);
+  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, and no other spec/);
+  assert.equal(h.status(), "✎ spec-mode verify");
+  await h.fire("agent_settled", { aborted: false });
+  assert.equal(h.status(), "✎ spec-mode 0002 · Draft");
+});
+
+test("/spec verify_oldest checks the oldest verified specs without a list", async () => {
+  const h = harness();
+  await h.fire("session_start");
+  mkdirSync(join(h.cwd, "specs"));
+  writeFileSync(join(h.cwd, "specs/0001_spec_a.md"), "| Status | Agreed |\n| Last verified | 2026-05-01 |\n");
+  writeFileSync(join(h.cwd, "specs/0002_spec_b.md"), "| Status | Agreed |\n| Last verified | |\n");
+  writeFileSync(join(h.cwd, "specs/0003_spec_c.md"), `| Status | Agreed |\n| Last verified | ${today()} |\n`);
+  await h.commands.spec.handler("verify_oldest", h.ctx);
+  assert.equal(h.offered.length, 0);
+  assert.match(h.sent.user[0], /^Verify `specs\/0002_spec_b\.md`, `specs\/0001_spec_a\.md`/);
+  await h.fire("agent_settled", { aborted: false });
+  // Both oldest verified today: nothing to do, nothing sent.
+  for (const f of ["0001_spec_a.md", "0002_spec_b.md"]) writeFileSync(join(h.cwd, "specs", f), `| Status | Agreed |\n| Last verified | ${today()} |\n`);
+  await h.commands.spec.handler("verify_oldest", h.ctx);
+  assert.match(h.notes.at(-1)!, /already verified today/);
+  assert.equal(h.sent.user.length, 1);
+});
+
+test("verify checks implemented specs against the code, draft and agreed ones against the other specs", async () => {
+  const { verifyContract } = await import("../src/prompts.ts");
+  const c = verifyContract("specs", "2026-11-23", ["specs/0001_spec_a.md"]);
+  assert.match(c, /- Implemented: against the code/);
+  // A rule not built yet is the normal state of an Agreed spec: reporting it as unverified is noise.
+  assert.match(c, /- Draft or Agreed: .*a rule the code does not do is expected, never a finding.*against the other specs/);
 });

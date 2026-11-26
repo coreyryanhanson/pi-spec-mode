@@ -31,21 +31,23 @@ pi -e ./                           # try a local checkout
 | `/spec restore <spec>` | Bring a refused spec back as `Draft` |
 | `/spec obsolete <spec> [replacement]` | Retire an implemented spec to `specs/Obsolete/` |
 | `/spec purge` | Delete the obsolete specs (asks first) |
-| `/spec verify [spec]` | Check specs against the code |
+| `/spec verify [spec...]` | Check specs: implemented against the code, others against the other specs |
+| `/spec verify_oldest` | Check the `verifyCount` specs verified longest ago, without the list |
 | `/spec implement <spec>` | Hand an `Agreed` spec to plan mode |
 | `/spec template` | Create a spec template fitted to your project |
 | `/spec settings` | Show and change the settings |
 | `/spec exit` | Leave spec mode |
 
-Commands that take a spec accept its number (`/spec agree 0003`) or file name; without one, `/spec` shows a picker.
+Commands that take a spec accept its number (`/spec agree 0003`) or file name. Typed without one (`/spec implement`), `agree`, `refuse`, `verify`, `restore`, `obsolete` and `implement` open the same spec picker as the `/spec` menu; `agree`, `refuse` and `verify` act on the spec in progress if there is one.
 
 ### In spec mode
 
 - The footer shows `✎ spec-mode 0003 · Draft`.
-- The agent reads the whole project, runs only read-only shell commands, and writes only Markdown files in the specs folder.
+- The agent reads the whole project, runs only read-only shell commands, and writes only Markdown files in the specs folder — unless the `yolo` setting is on (see Settings).
 - It asks you decisions through `spec_question`, and calls `spec_complete` when the spec is ready: you then pick **Agree**, **Keep discussing** or **Leave**.
 - Before that, it checks the new spec against the existing ones (titles and goals, plus a full read of related `Agreed` / `Implemented` specs) and asks about any contradiction.
 - It cannot agree a spec or mark one `Implemented` itself; that stays your call.
+- The `/spec` menu only offers `list` and `exit`, plus `agree`, `verify` and `refuse` for the spec in progress once it is written. `verify_oldest`, `implement`, `restore`, `obsolete`, `purge`, `template`, `settings` and refusing or verifying another spec are refused until `/spec exit`.
 
 ### Spec lifecycle
 
@@ -69,7 +71,12 @@ flowchart LR
 
 ### Verify
 
-`/spec verify` checks the `verifyCount` specs verified longest ago (or the one you name) and fixes any that drifted from the code. Refused and obsolete specs are skipped.
+`/spec verify` checks an `Implemented` spec against the code, and a `Draft` or `Agreed` spec against the other specs (contradictions, duplicates, missing dependencies): a rule not built yet is not reported. It fixes any spec that drifted. Refused and obsolete specs are skipped.
+
+- `/spec verify` (or `verify` in the `/spec` menu) opens a list of the specs with the `verifyCount` verified longest ago already ticked: Enter on a spec ticks or unticks it, Enter on the first line starts the run. Without an interactive UI, it checks those `verifyCount` specs.
+- `/spec verify_oldest` checks those `verifyCount` specs directly, without the list.
+- `/spec verify 3 5` checks the specs you name, even if already verified today.
+- In spec mode, `/spec verify` checks the spec in progress, then spec mode resumes.
 
 An `Agreed` spec it had to change goes back to `Draft`; at the end you are asked whether to agree it again (or later, with `/spec agree`).
 
@@ -111,7 +118,8 @@ Global: `~/.pi/agent/pi-spec-mode.json`. Per project (trusted projects only): `.
   "language": "English",
   "verifyCount": 2,
   "renameSession": false,
-  "renamePlanSession": false
+  "renamePlanSession": false,
+  "yolo": false
 }
 ```
 
@@ -122,8 +130,11 @@ Global: `~/.pi/agent/pi-spec-mode.json`. Per project (trusted projects only): `.
 | `verifyCount` | Specs checked per `/spec verify` run |
 | `renameSession` | Rename the session `spec NNNN creation` when a spec is created |
 | `renamePlanSession` | Rename the session `spec NNNN planning` on `/spec implement` |
+| `yolo` | Disable spec mode's tool gating (any tool, any bash command, writes anywhere). Default false |
 
 An invalid value is ignored with a warning and the default is used.
+
+**Warning:** with `yolo` true, the agent can edit any file and run any command — the "enforced" promise of spec mode does not apply, and specs agreed in such a session were produced without the usual guardrails. The spec template stays protected from the write and edit tools: `/spec agree` measures every spec against it. The `Status` rules, `/spec verify` and `spec_complete` still apply to write and edit tool calls; shell writes to a spec file are not intercepted.
 
 ## Develop
 
@@ -137,7 +148,7 @@ npm run typecheck
 
 - **The conflict check is a model instruction, not code**, and only sees each spec's title and `Goal` section. A conflict hidden in an unrelated-looking spec can be missed; `/spec verify` is the safety net. Keep a `Goal` heading in your template.
 - **"Never read an obsolete spec" is a model instruction too.** Run `/spec purge` to be sure.
-- **Symlinked specs are ignored**, so nothing is written outside the specs folder.
+- **Symlinked specs are ignored**, so nothing is written outside the specs folder (unless `yolo` is on).
 
 ## Changelog
 

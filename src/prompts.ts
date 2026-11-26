@@ -11,6 +11,7 @@ interface SpecContext {
   template: string;
   specs: string[]; // "path — Status — Title: goal"
   current?: string;
+  yolo: boolean;
 }
 
 /** Obsolete specs describe behaviour that is gone: reading one would bring it back. */
@@ -21,10 +22,12 @@ export function specContract(c: SpecContext): string {
   return `${SPEC_MARKER}
 You are in spec mode. A spec says what a feature is and how it behaves; it never describes code: no files, classes, data structures or test plan.
 
-Restrictions (enforced, calls outside them are refused):
+${c.yolo
+  ? `Tool restrictions are lifted (the yolo setting is on): any tool may be used and writes are not limited to the specs folder. Still write only the spec: no code, tests or implementation plans.`
+  : `Restrictions (enforced, calls outside them are refused):
 - Read anything in the project; bash only for read-only commands.
 - Create and edit only Markdown files (.md) inside \`${c.specsDir}/\`, with the write and edit tools.
-- Never write code, tests or implementation plans.
+- Never write code, tests or implementation plans.`}
 
 Writing the spec:
 - New file: \`${c.specsDir}/${c.next}_spec_<feature>.md\`, <feature> in snake_case, H1 \`# ${c.next} Spec: <Feature name>\`. Never overwrite an existing spec: if one exists for this feature, ask whether to extend it or create a new one. A Draft spec for the same feature is continued, not duplicated.
@@ -50,16 +53,25 @@ ${c.template}
 \`\`\``;
 }
 
-export function verifyContract(specsDir: string, today: string, targets: string[]): string {
-  return `${VERIFY_MARKER}
-Verify these specs against the code, in this order: ${targets.map((t) => `\`${t}\``).join(", ")}.
-Restrictions (enforced): read anything; bash read-only; write and edit only .md files inside \`${specsDir}/\`.
+/** The message that starts a verify run: it names the specs, so the request cannot read as "verify everything" or as normal mode. */
+export function verifyRequest(targets: string[]): string {
+  return `Verify ${targets.map((t) => `\`${t}\``).join(", ")}, and no other spec. The spec-mode VERIFY contract in the system prompt applies to this run: it replaces any earlier NORMAL or SPEC contract.`;
+}
 
-For each spec, read it in full, then check one claim at a time: every numbered rule, every Feedback item, every number stated as behaviour, and the header (Agreed while the feature runs = drifted; Implemented while rules no longer match = rotted). A claim you cannot check counts as unverified, not passing.
+export function verifyContract(specsDir: string, today: string, targets: string[], yolo = false): string {
+  return `${VERIFY_MARKER}
+Verify these specs, in this order: ${targets.map((t) => `\`${t}\``).join(", ")}.
+${yolo
+  ? `Tool restrictions are lifted (the yolo setting is on): any tool may be used. Still verify only: the writes this run makes are the spec files it checks.`
+  : `Restrictions (enforced): read anything; bash read-only; write and edit only .md files inside \`${specsDir}/\`.`}
+
+For each spec, read it in full, then check one claim at a time (every numbered rule, every Feedback item, every number stated as behaviour). What a claim is checked against depends on the spec's Status:
+- Implemented: against the code. The header too: Implemented while rules no longer match = rotted. A claim you cannot check counts as unverified, not passing.
+- Draft or Agreed: the feature is not built yet, so a rule the code does not do is expected, never a finding. Check it against the other specs of \`${specsDir}/\` (Draft, Agreed and Implemented): a rule contradicting another spec, the same behaviour specified twice with different values or names, a rule depending on behaviour no spec and no code provides, two rules of the spec contradicting each other. Read the code only where a rule states current behaviour ("as today", an existing name or value): that statement must hold. Header: Agreed while the feature already runs in full = drifted.
 
 Act:
 - Working code, spec wrong (renamed, moved, changed value, status or Implementation date stale): fix the spec. Working implemented behaviour is not a bug.
-- Code genuinely broken (missing, crashing, contradicting its own rules): report it, do not touch the spec.
+- Code genuinely broken (an Implemented rule missing, crashing, contradicting its own rules): report it, do not touch the spec.
 - A rule itself must change (new or dropped behaviour, different design): ask the user first with spec_question.
 - Undecidable: report it.
 Status only moves forward: Agreed whose rules all run → Implemented. Never set Agreed or Draft: a spec fixed to match the code keeps its status. An Agreed spec you edit is put back to Draft by spec mode itself, and the user is asked whether to agree it again once the run ends; never set Agreed yourself.
