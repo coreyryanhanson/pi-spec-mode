@@ -5,7 +5,7 @@
 ### Added
 
 - Verify the specs you choose: `/spec verify` (and `verify` in the `/spec` menu) opens a list where Enter ticks or unticks a spec and the first line starts the run. The `verifyCount` specs verified longest ago are ticked from the start, so Enter alone does what `/spec verify` did before; without an interactive UI it still checks them directly. `/spec verify_oldest` runs that check directly, without the list. `/spec verify 3 5` names several specs. In spec mode, `verify` checks the spec in progress and spec mode resumes after the run; verifying another spec there is refused.
-- `yolo` setting (off by default): spec mode stops blocking tools — the agent may use any tool, run any bash command and write anywhere. The `Status` rules and `/spec verify`'s restore behaviour still apply to write and edit tool calls (shell writes to a spec file are not intercepted), `spec_complete` is unchanged, the spec template stays protected from the write and edit tools so `/spec agree` keeps measuring against it, and the prompt tells the agent the restrictions are lifted instead of enforced.
+- `yolo` setting (off by default): spec mode stops blocking tools — the agent may use any tool, run any bash command and write anywhere. The `Status` rules and `/spec verify`'s restore behaviour still apply to write and edit tool calls (shell writes to a spec file are not intercepted), `spec_complete` is unchanged, the spec template stays protected from the write and edit tools so `/spec agree` keeps measuring against it, and the prompt tells the agent the restrictions are lifted instead of enforced. The footer then reads `✎ spec-mode (YOLO)`.
 
 ### Fixed
 

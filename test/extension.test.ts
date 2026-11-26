@@ -151,6 +151,7 @@ test("yolo: the calls spec mode would block pass through", async () => {
   await h.fire("session_start");
   await h.commands.spec.handler("start", h.ctx);
   assert.match(h.notes[0], /yolo/); // the banner no longer promises a limited write scope
+  assert.equal(h.status(), "✎ spec-mode (YOLO)");
   const call = (toolName: string, input: any) => h.fire("tool_call", { toolName, toolCallId: "t", input });
   // The bash allowlist is off: writes through the shell run.
   assert.equal(await call("bash", { command: "echo x > specs/a.md" }), undefined);

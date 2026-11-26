@@ -42,7 +42,7 @@ Commands that take a spec accept its number (`/spec agree 0003`) or file name. T
 
 ### In spec mode
 
-- The footer shows `✎ spec-mode 0003 · Draft`.
+- The footer shows `✎ spec-mode 0003 · Draft` (`✎ spec-mode (YOLO) 0003 · Draft` when the `yolo` setting is on).
 - The agent reads the whole project, runs only read-only shell commands, and writes only Markdown files in the specs folder — unless the `yolo` setting is on (see Settings).
 - It asks you decisions through `spec_question`, and calls `spec_complete` when the spec is ready: you then pick **Agree**, **Keep discussing** or **Leave**.
 - Before that, it checks the new spec against the existing ones (titles and goals, plus a full read of related `Agreed` / `Implemented` specs) and asks about any contradiction.

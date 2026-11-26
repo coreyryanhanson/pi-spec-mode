@@ -175,10 +175,11 @@ export default function specMode(pi: ExtensionAPI) {
   function refresh(ctx: ExtensionContext) {
     if (!ctx.hasUI) return;
     let text: string | undefined;
-    if (state.mode === "verify") text = "✎ spec-mode verify";
+    const mode = settings.yolo ? "✎ spec-mode (YOLO)" : "✎ spec-mode";
+    if (state.mode === "verify") text = `${mode} verify`;
     else if (state.mode === "spec") {
       const status = state.spec && specStatus(ctx, state.spec);
-      text = status ? `✎ spec-mode ${basename(state.spec!).slice(0, 4)} · ${status}` : "✎ spec-mode";
+      text = status ? `${mode} ${basename(state.spec!).slice(0, 4)} · ${status}` : mode;
     }
     // mdLink is the blue of the built-in themes; accent is violet and reads as plan mode
     ctx.ui.setStatus("spec-mode", text && ctx.ui.theme.fg("mdLink", text));
@@ -457,6 +458,7 @@ export default function specMode(pi: ExtensionAPI) {
         continue;
       }
       settings = loadSettings(ctx);
+      refresh(ctx); // a yolo toggle shows in the footer at once
       notify(ctx, settings[key] === value ? `${key} set to ${JSON.stringify(value)} in ${file}` : `${key} saved in ${file}, but ${project} overrides it`);
     }
   }
