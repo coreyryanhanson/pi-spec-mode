@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1
+
+### Changed
+
+- With the `yolo` setting on, the spec mode footer reads `✎ spec-mode (YOLO)`, so you see that tools are not blocked.
+- Shorter labels in the `/spec` menu.
+
 ## 1.1.0
 
 ### Added

@@ -33,9 +33,8 @@ const READ_TOOLS = new Set(["read", "grep", "find", "ls", "spec_question", "spec
 const BUNDLED_TEMPLATE = fileURLToPath(new URL("../templates/spec_template.md", import.meta.url));
 const USAGE = "/spec start | <request> | list | agree [spec] | refuse [spec] | restore <spec> | obsolete <spec> [replacement] | purge | verify [spec...] | verify_oldest | implement <spec> | template | exit | settings";
 /** `/spec` menu detail shown after the command word, so the menu reads like the completion. */
-const MENU_DETAIL: Record<string, string> = {
-  start: "enter spec mode", verify: "check specs against the code or each other", verify_oldest: "check the oldest verified specs", implement: "hand a spec to plan mode",
-  restore: "a refused spec", obsolete: "an implemented spec replaced", purge: "delete obsolete specs",
+const MENU_DETAIL: Record<string, string> = {verify: "check a specific spec", verify_oldest: "check the x oldest specs", implement: "hand a spec to plan mode",
+  restore: "a refused spec", obsolete: "an implemented spec", purge: "delete obsolete specs",
   template: "create the project template", exit: "leave spec mode",
 };
 const DEFAULT_SETTINGS: Settings = { specsDir: "specs", language: "English", verifyCount: 2, renameSession: false, renamePlanSession: false, yolo: false };
@@ -176,10 +175,11 @@ export default function specMode(pi: ExtensionAPI) {
   function refresh(ctx: ExtensionContext) {
     if (!ctx.hasUI) return;
     let text: string | undefined;
-    if (state.mode === "verify") text = "✎ spec-mode verify";
+    const mode = settings.yolo ? "✎ spec-mode (YOLO)" : "✎ spec-mode";
+    if (state.mode === "verify") text = `${mode} verify`;
     else if (state.mode === "spec") {
       const status = state.spec && specStatus(ctx, state.spec);
-      text = status ? `✎ spec-mode ${basename(state.spec!).slice(0, 4)} · ${status}` : "✎ spec-mode";
+      text = status ? `${mode} ${basename(state.spec!).slice(0, 4)} · ${status}` : mode;
     }
     // mdLink is the blue of the built-in themes; accent is violet and reads as plan mode
     ctx.ui.setStatus("spec-mode", text && ctx.ui.theme.fg("mdLink", text));
@@ -458,6 +458,7 @@ export default function specMode(pi: ExtensionAPI) {
         continue;
       }
       settings = loadSettings(ctx);
+      refresh(ctx); // a yolo toggle shows in the footer at once
       notify(ctx, settings[key] === value ? `${key} set to ${JSON.stringify(value)} in ${file}` : `${key} saved in ${file}, but ${project} overrides it`);
     }
   }

@@ -151,6 +151,7 @@ test("yolo: the calls spec mode would block pass through", async () => {
   await h.fire("session_start");
   await h.commands.spec.handler("start", h.ctx);
   assert.match(h.notes[0], /yolo/); // the banner no longer promises a limited write scope
+  assert.equal(h.status(), "✎ spec-mode (YOLO)");
   const call = (toolName: string, input: any) => h.fire("tool_call", { toolName, toolCallId: "t", input });
   // The bash allowlist is off: writes through the shell run.
   assert.equal(await call("bash", { command: "echo x > specs/a.md" }), undefined);
@@ -653,7 +654,7 @@ test("renamePlanSession names the session after the spec handed to plan mode, ty
 });
 
 test("/spec menu runs the same commands as typing them", async () => {
-  const h = harness({ plan: true, picks: ["implement (hand a spec to plan mode)", "0001 · Agreed · x", "start (enter spec mode)", "exit (leave spec mode)"] });
+  const h = harness({ plan: true, picks: ["implement (hand a spec to plan mode)", "0001 · Agreed · x", "start", "exit (leave spec mode)"] });
   await h.fire("session_start");
   mkdirSync(join(h.cwd, "specs"));
   writeFileSync(join(h.cwd, "specs/0001_spec_x.md"), "| Status | Agreed |\n");
@@ -1283,7 +1284,7 @@ test("/spec obsolete moves an implemented spec to Obsolete/ with its replacement
 });
 
 test("/spec menu obsolete picks an implemented spec, then its replacement or none", async () => {
-  const h = await obsoleteSetup({ picks: ["obsolete (an implemented spec replaced)", "0002 · Implemented · login", "none (no replacement)"] });
+  const h = await obsoleteSetup({ picks: ["obsolete (an implemented spec)", "0002 · Implemented · login", "none (no replacement)"] });
   await h.commands.spec.handler("", h.ctx);
   assert.deepEqual(h.offered[1], ["0002 · Implemented · login"]);
   assert.deepEqual(h.offered[2], ["none (no replacement)", "0001 · Draft · draft"]);
@@ -1366,7 +1367,7 @@ test("/spec verify picker: Enter ticks or unticks a spec, the first line starts,
     return h;
   };
   // The menu entry opens the same picker; refused specs are not offered.
-  const h = await setup(["verify (check specs against the code or each other)", "[x] 0001 · Agreed · a", "[ ] 0003 · Agreed · c", "▶ verify 2 selected"]);
+  const h = await setup(["verify (check a specific spec)", "[x] 0001 · Agreed · a", "[ ] 0003 · Agreed · c", "▶ verify 2 selected"]);
   await h.commands.spec.handler("", h.ctx);
   assert.deepEqual(h.offered[1], ["▶ verify 2 selected", "[x] 0001 · Agreed · a", "[x] 0002 · Draft · b", "[ ] 0003 · Agreed · c"]);
   assert.deepEqual(h.offered[2], ["▶ verify 1 selected", "[ ] 0001 · Agreed · a", "[x] 0002 · Draft · b", "[ ] 0003 · Agreed · c"]);
